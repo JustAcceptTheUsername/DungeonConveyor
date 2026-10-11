@@ -1,0 +1,49 @@
+newmtl rock
+Kd 0.240 0.160 0.130
+Ns 8
+newmtl gold
+Kd 1.000 0.660 0.100
+Ns 60
+Ke 1.000 0.660 0.100
+newmtl crystal
+Kd 0.280 0.620 1.000
+Ns 80
+Ke 0.280 0.620 1.000
+newmtl void
+Kd 0.010 0.010 0.012
+Ns 1
+newmtl wood
+Kd 0.400 0.230 0.120
+Ns 10
+newmtl metal
+Kd 0.270 0.270 0.300
+Ns 50
+newmtl yellow
+Kd 0.980 0.640 0.080
+Ns 30
+newmtl metal_dark
+Kd 0.130 0.130 0.155
+Ns 40
+newmtl metal_light
+Kd 0.520 0.520 0.560
+Ns 70
+newmtl glow
+Kd 1.000 0.450 0.080
+Ns 1
+Ke 1.000 0.450 0.080
+newmtl wood_dark
+Kd 0.250 0.140 0.080
+Ns 10
+newmtl steel
+Kd 0.480 0.480 0.520
+Ns 80
+newmtl orange
+Kd 0.860 0.330 0.050
+Ns 30
+newmtl rubber
+Kd 0.080 0.080 0.085
+Ns 10
+newmtl glow_red
+Kd 1.000 0.120 0.050
+Ns 1
+Ke 1.000 0.120 0.050

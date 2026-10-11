@@ -1,0 +1,93 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 66e3c48cb743db943b09d6540daecfc6, type: 3}
+  m_Name: ArtLibrary
+  m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.ArtLibrary
+  Ores:
+  - Name: Sapphire
+    Color: {r: 0.22, g: 0.5, b: 1, a: 1}
+    Value: 5
+    Weight: 5
+    MinBaseDistance: 0
+    AmountPerTile: {x: 25, y: 45}
+    Deposits:
+    - {fileID: -8088775952680602185, guid: b2928975d55c56c4baa127de3cd5c8a3, type: 3}
+    - {fileID: -5093700189509329542, guid: bb5535d585f6fa6488ea2049478a8572, type: 3}
+    - {fileID: -1483561698357434519, guid: 5a2255fdcd2c32b4888a63828f23810a, type: 3}
+    Item: {fileID: 6513811290069771234, guid: 4f66903dde9284a4ba41c2272a84e6fb, type: 3}
+    RefinedItem: {fileID: -1483561698357434519, guid: 5a2255fdcd2c32b4888a63828f23810a, type: 3}
+  - Name: Emerald
+    Color: {r: 0.25, g: 0.85, b: 0.4, a: 1}
+    Value: 8
+    Weight: 3
+    MinBaseDistance: 6
+    AmountPerTile: {x: 20, y: 40}
+    Deposits:
+    - {fileID: 8899464691301306101, guid: 04fc405baae06764ba85c965f3697c07, type: 3}
+    - {fileID: -130423932842062547, guid: af625b330d608b64887aa51f8f1e96f7, type: 3}
+    - {fileID: -9213831589183402913, guid: 00ea251a9330f1042866b7f60c2285fc, type: 3}
+    Item: {fileID: 2773739367496071257, guid: 2b94c0b2ab8c8ea42a71fd2c9b75aa35, type: 3}
+    RefinedItem: {fileID: -9213831589183402913, guid: 00ea251a9330f1042866b7f60c2285fc, type: 3}
+  - Name: Amethyst
+    Color: {r: 0.7, g: 0.35, b: 1, a: 1}
+    Value: 12
+    Weight: 2
+    MinBaseDistance: 10
+    AmountPerTile: {x: 15, y: 35}
+    Deposits:
+    - {fileID: -8185645679707339019, guid: 072b8490f14de334889bd4d8c690e20e, type: 3}
+    - {fileID: -2875847892693637034, guid: 3ca1b804f142fd04c88915a48514c892, type: 3}
+    - {fileID: 2552678971454977768, guid: 59d8a9b46fc45464daa96dcf0d927919, type: 3}
+    Item: {fileID: 475623316948278010, guid: 92e565d9f8ce5ee43953073765328b67, type: 3}
+    RefinedItem: {fileID: 2552678971454977768, guid: 59d8a9b46fc45464daa96dcf0d927919, type: 3}
+  - Name: Gold
+    Color: {r: 1, g: 0.75, b: 0.2, a: 1}
+    Value: 20
+    Weight: 1.2
+    MinBaseDistance: 13
+    AmountPerTile: {x: 12, y: 28}
+    Deposits:
+    - {fileID: 1016235020893856444, guid: 29bac492b9a89734398cc0a0b08a0590, type: 3}
+    - {fileID: -8501559868097419703, guid: 9e9d894cffdc7ed42b50ff6db333ca9e, type: 3}
+    - {fileID: -1552419959593570724, guid: 82d43c5578527a14ea254a42928e05f7, type: 3}
+    Item: {fileID: -9209999968869179363, guid: b4fd360712934fc4b95169c83fdc0eb3, type: 3}
+    RefinedItem: {fileID: -1552419959593570724, guid: 82d43c5578527a14ea254a42928e05f7, type: 3}
+  - Name: Ruby
+    Color: {r: 1, g: 0.25, b: 0.25, a: 1}
+    Value: 32
+    Weight: 0.7
+    MinBaseDistance: 16
+    AmountPerTile: {x: 8, y: 20}
+    Deposits:
+    - {fileID: 3805931681882716326, guid: db354015172185a48bf1e4c656c89f92, type: 3}
+    - {fileID: 3852037741137956023, guid: d93447c5841a022428a4ac7e40aae751, type: 3}
+    - {fileID: -9215055539270256278, guid: 9c6edf4b8fad5f74eb9093759bc24e87, type: 3}
+    Item: {fileID: 4361651544775307456, guid: 8d1752a9cb1cee045ac94ee6676f41f4, type: 3}
+    RefinedItem: {fileID: -9215055539270256278, guid: 9c6edf4b8fad5f74eb9093759bc24e87, type: 3}
+  DepositScale: 0.6
+  ItemScale: 0.5
+  CliffEdges:
+  - {fileID: -2716660689583004874, guid: 0be8a3a2e6bfe56459b7319cd23ac290, type: 3}
+  - {fileID: -348777465634432398, guid: 9a91d7dde96f67c47b922c253294a878, type: 3}
+  - {fileID: -3668411704931163941, guid: edd12cf8e8a4ff24ab40514bfdf175f7, type: 3}
+  CliffCorner: {fileID: -3753270745574954912, guid: ba6ba99d0437c024c860de7a6fc5b116, type: 3}
+  CliffYaw: 180
+  RockWalls:
+  - {fileID: 8728796427214546931, guid: 0b500401aa5486049a77ed0985784b75, type: 3}
+  - {fileID: 6744426863250436458, guid: d5c75c2ed549cb548b5f07df3b041555, type: 3}
+  - {fileID: -5931367938593997350, guid: cfa9f94b58065c744aac8edf79742d99, type: 3}
+  - {fileID: 1460076257475956497, guid: 25ccc6963848dc842babc2eef05102db, type: 3}
+  - {fileID: 614908820316204905, guid: 272474c19270e1b4fac1cbc50d7025fb, type: 3}
+  - {fileID: -5815458360320013473, guid: dd041522ca8543346ad8ddde3cb5129d, type: 3}
+  RockAccents:
+  - {fileID: 3909745870667769942, guid: 2d78d0b4dd38c5841989865b8d8b31e9, type: 3}
+  RockAccentChance: 0.12

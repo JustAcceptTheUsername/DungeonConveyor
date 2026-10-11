@@ -1,0 +1,13 @@
+newmtl chitin
+Kd 0.100 0.060 0.070
+Ns 50
+newmtl chitin_brown
+Kd 0.400 0.200 0.080
+Ns 40
+newmtl bone
+Kd 0.780 0.700 0.560
+Ns 30
+newmtl glow
+Kd 1.000 0.450 0.080
+Ns 1
+Ke 1.000 0.450 0.080

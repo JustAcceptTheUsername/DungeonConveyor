@@ -1,0 +1,10 @@
+newmtl cliff
+Kd 0.240 0.200 0.270
+Ns 12
+newmtl cliff_dark
+Kd 0.130 0.100 0.150
+Ns 10
+newmtl glow_purple
+Kd 0.700 0.300 1.000
+Ns 1
+Ke 0.700 0.300 1.000

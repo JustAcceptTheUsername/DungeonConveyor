@@ -1,0 +1,27 @@
+newmtl metal_dark
+Kd 0.130 0.130 0.155
+Ns 40
+newmtl orange_dark
+Kd 0.500 0.180 0.040
+Ns 30
+newmtl yellow
+Kd 0.980 0.640 0.080
+Ns 30
+newmtl metal
+Kd 0.270 0.270 0.300
+Ns 50
+newmtl steel
+Kd 0.480 0.480 0.520
+Ns 80
+newmtl metal_light
+Kd 0.520 0.520 0.560
+Ns 70
+newmtl orange
+Kd 0.860 0.330 0.050
+Ns 30
+newmtl void
+Kd 0.010 0.010 0.012
+Ns 1
+newmtl copper
+Kd 0.850 0.420 0.220
+Ns 60

@@ -1,0 +1,7 @@
+newmtl Crystal_Rock
+Kd 0.200 0.170 0.220
+Ns 10
+newmtl Crystal
+Kd 0.850 0.880 0.950
+Ns 120
+Ke 0.850 0.880 0.950

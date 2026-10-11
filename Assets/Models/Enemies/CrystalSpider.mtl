@@ -1,0 +1,17 @@
+newmtl chitin_purple
+Kd 0.220 0.090 0.300
+Ns 50
+newmtl chitin
+Kd 0.100 0.060 0.070
+Ns 50
+newmtl crystal
+Kd 0.280 0.620 1.000
+Ns 80
+Ke 0.280 0.620 1.000
+newmtl glow_purple
+Kd 0.700 0.300 1.000
+Ns 1
+Ke 0.700 0.300 1.000
+newmtl bone
+Kd 0.780 0.700 0.560
+Ns 30

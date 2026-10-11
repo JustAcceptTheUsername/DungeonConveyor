@@ -1,0 +1,16 @@
+newmtl chitin
+Kd 0.100 0.060 0.070
+Ns 50
+newmtl chitin_red
+Kd 0.480 0.070 0.050
+Ns 50
+newmtl glow_red
+Kd 1.000 0.120 0.050
+Ns 1
+Ke 1.000 0.120 0.050
+newmtl bone
+Kd 0.780 0.700 0.560
+Ns 30
+newmtl wing
+Kd 0.160 0.100 0.080
+Ns 70

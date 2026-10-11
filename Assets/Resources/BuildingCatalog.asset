@@ -1,0 +1,228 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36bf259524f00984ea4ba2f8100a6044, type: 3}
+  m_Name: BuildingCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.BuildingCatalog
+  Entries:
+  - Id: Core
+    Name: Core
+    Model: {fileID: -7517853189988344250, guid: 5c9a0e476be1ab54f8bb10a6d4c7316a, type: 3}
+    Category: 0
+    Cost: 0
+    Size: {x: 4, y: 4}
+    Scale: 1.724138
+    Purchasable: 0
+    Description: Your base. If it falls, the dungeon is lost.
+    Attack: 0
+    Range: 0
+    Damage: 0
+    FireRate: 1
+    Splash: 0
+  - Id: Conveyor
+    Name: Conveyor
+    Model: {fileID: 188925187561463615, guid: da883e171a26e9a40b58554e3b2686dd, type: 3}
+    Category: 1
+    Cost: 10
+    Size: {x: 2, y: 1}
+    Scale: 1
+    Purchasable: 1
+    Description: Moves ore along a belt.
+    Attack: 0
+    Range: 0
+    Damage: 0
+    FireRate: 1
+    Splash: 0
+  - Id: Wall
+    Name: Wall
+    Model: {fileID: -5529287013646982847, guid: e3e2e0e238cf54a48a4400f23b2ba710, type: 3}
+    Category: 0
+    Cost: 25
+    Size: {x: 1, y: 1}
+    Scale: 0.5
+    Purchasable: 1
+    Description: Cheap, sturdy barrier.
+    Attack: 0
+    Range: 0
+    Damage: 0
+    FireRate: 1
+    Splash: 0
+  - Id: LandMine
+    Name: Land Mine
+    Model: {fileID: -3485466826927445148, guid: 78bb3b1ca7e68db4c89da2cc64136172, type: 3}
+    Category: 0
+    Cost: 40
+    Size: {x: 1, y: 1}
+    Scale: 1
+    Purchasable: 1
+    Description: Explodes when an enemy steps on it. Can be placed anywhere enemies
+      walk.
+    Attack: 7
+    Range: 0.6
+    Damage: 150
+    FireRate: 1
+    Splash: 1.6
+  - Id: Splitter
+    Name: Splitter
+    Model: {fileID: -6578007703932759359, guid: 7ef3065172e6820469aadc4ea897ec7f, type: 3}
+    Category: 1
+    Cost: 60
+    Size: {x: 2, y: 2}
+    Scale: 1
+    Purchasable: 1
+    Description: Takes items from belts feeding into it and shares them between the
+      belts leading out.
+    Attack: 0
+    Range: 0
+    Damage: 0
+    FireRate: 1
+    Splash: 0
+  - Id: Miner
+    Name: Miner
+    Model: {fileID: 1678460109524132916, guid: 2b00b6d884ad8854abf78770d6026a71, type: 3}
+    Category: 2
+    Cost: 120
+    Size: {x: 2, y: 2}
+    Scale: 1
+    Purchasable: 1
+    Description: Drills ore. Must be placed on an ore deposit.
+    Attack: 0
+    Range: 0
+    Damage: 0
+    FireRate: 1
+    Splash: 0
+  - Id: Turret
+    Name: Turret
+    Model: {fileID: 2316202870914594075, guid: 2a0542c23cb8c4e40bfbef70382f834c, type: 3}
+    Category: 0
+    Cost: 150
+    Size: {x: 1, y: 1}
+    Scale: 1
+    Purchasable: 1
+    Description: Reliable rapid-fire gun.
+    Attack: 1
+    Range: 4.5
+    Damage: 10
+    FireRate: 3
+    Splash: 0
+  - Id: Collector
+    Name: Refiner
+    Model: {fileID: -6716511680544242210, guid: 9ec2c8324fb8e954d82373c3efaa1781, type: 3}
+    Category: 1
+    Cost: 250
+    Size: {x: 1, y: 1}
+    Scale: 1
+    Purchasable: 1
+    Description: Refines raw ore passing through it, multiplying its value. Feed
+      it with a belt and lead a belt out.
+    Attack: 0
+    Range: 0
+    Damage: 0
+    FireRate: 1
+    Splash: 0
+  - Id: Flamethrower
+    Name: Flamethrower
+    Model: {fileID: -8952633484966204404, guid: 98a8f8dc2cb0d484fb7e2ad8a39c21d8, type: 3}
+    Category: 0
+    Cost: 250
+    Size: {x: 1, y: 1}
+    Scale: 1
+    Purchasable: 1
+    Description: Burns every enemy inside its short-range field.
+    Attack: 5
+    Range: 2.5
+    Damage: 35
+    FireRate: 1
+    Splash: 0
+  - Id: Mortar
+    Name: Mortar
+    Model: {fileID: 909210449430011193, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+    Category: 0
+    Cost: 280
+    Size: {x: 1, y: 1}
+    Scale: 1
+    Purchasable: 1
+    Description: Long-range shells with a big blast. Can't hit enemies up close.
+    Attack: 3
+    Range: 8.5
+    Damage: 70
+    FireRate: 0.4
+    Splash: 1.6
+  - Id: LaserTower
+    Name: Laser Tower
+    Model: {fileID: -8479218121996466476, guid: 0f4e20bbbc16d6d449a8f259780baf0b, type: 3}
+    Category: 0
+    Cost: 300
+    Size: {x: 1, y: 1}
+    Scale: 1
+    Purchasable: 1
+    Description: Continuous beam that melts a single target.
+    Attack: 4
+    Range: 5
+    Damage: 30
+    FireRate: 1
+    Splash: 0
+  - Id: MineShaft
+    Name: Mine Shaft
+    Model: {fileID: -7124118177044448163, guid: d4bf96f8ca1e46d47800db38fb7783c7, type: 3}
+    Category: 2
+    Cost: 300
+    Size: {x: 2, y: 2}
+    Scale: 1
+    Purchasable: 1
+    Description: Deep mine with high output. Must be placed on an ore deposit.
+    Attack: 0
+    Range: 0
+    Damage: 0
+    FireRate: 1
+    Splash: 0
+  - Id: MissileLauncher
+    Name: Missile Launcher
+    Model: {fileID: -3226923492129942171, guid: 2a893bdbb6039be428ccf440ffe4f29e, type: 3}
+    Category: 0
+    Cost: 350
+    Size: {x: 1, y: 1}
+    Scale: 1
+    Purchasable: 1
+    Description: Homing missiles that explode on impact.
+    Attack: 2
+    Range: 7
+    Damage: 55
+    FireRate: 0.6
+    Splash: 1.2
+  - Id: TeslaCoil
+    Name: Tesla Coil
+    Model: {fileID: -8382162346071086327, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+    Category: 0
+    Cost: 400
+    Size: {x: 1, y: 1}
+    Scale: 1
+    Purchasable: 1
+    Description: Lightning that chains between nearby enemies.
+    Attack: 6
+    Range: 4
+    Damage: 28
+    FireRate: 1
+    Splash: 4
+  - Id: ShieldGenerator
+    Name: Shield Generator
+    Model: {fileID: -5982242663529193206, guid: 05869a60df8a2574a90a7319ecae8544, type: 3}
+    Category: 0
+    Cost: 450
+    Size: {x: 2, y: 2}
+    Scale: 1
+    Purchasable: 1
+    Description: Projects a field that slows every enemy inside it.
+    Attack: 8
+    Range: 3.5
+    Damage: 0.5
+    FireRate: 1
+    Splash: 0

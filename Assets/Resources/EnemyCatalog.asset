@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7977c07e733aea049abd74fb04a83fe4, type: 3}
+  m_Name: EnemyCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.EnemyCatalog
+  YawOffset: 0
+  Entries:
+  - Id: Crawler
+    Name: Crawler
+    Model: {fileID: -189797882689187869, guid: 59f9e8fdebdf8a940a450c808b3ad159, type: 3}
+    Scale: 0.6
+    Health: 40
+    Speed: 1.5
+    CoreDamage: 10
+    Bounty: 3
+    FirstWave: 1
+    Weight: 4
+    Hover: 0
+  - Id: CrystalSpider
+    Name: Crystal Spider
+    Model: {fileID: -4055828578183838197, guid: 0c2421dbceec3d649a189717400de18e, type: 3}
+    Scale: 0.6
+    Health: 75
+    Speed: 1.25
+    CoreDamage: 15
+    Bounty: 5
+    FirstWave: 2
+    Weight: 3
+    Hover: 0
+  - Id: Wasp
+    Name: Wasp
+    Model: {fileID: -6189057522356269762, guid: 56b530911fd667e418986bdee82c360d, type: 3}
+    Scale: 0.6
+    Health: 32
+    Speed: 2.3
+    CoreDamage: 8
+    Bounty: 4
+    FirstWave: 4
+    Weight: 2
+    Hover: 0.35
+  - Id: AcidSpitter
+    Name: Acid Spitter
+    Model: {fileID: 4236427390945188737, guid: 7a294356b3ba23440a62eca38f407e2e, type: 3}
+    Scale: 0.6
+    Health: 150
+    Speed: 0.95
+    CoreDamage: 30
+    Bounty: 9
+    FirstWave: 6
+    Weight: 1.5
+    Hover: 0
+  - Id: Brute
+    Name: Brute
+    Model: {fileID: -4458627345364876513, guid: d038d2303d0805c4ab9c68b7629c3115, type: 3}
+    Scale: 0.8
+    Health: 480
+    Speed: 0.7
+    CoreDamage: 90
+    Bounty: 25
+    FirstWave: 9
+    Weight: 0.6
+    Hover: 0

@@ -1,0 +1,35 @@
+# Text files: normalise line endings in the repository
+* text=auto
+*.cs text diff=csharp
+*.shader text
+*.json text
+*.md text
+
+# Unity YAML assets: text, but treat as binary for merges (merge by hand or with UnityYAMLMerge)
+*.unity text merge=unityyamlmerge eol=lf
+*.prefab text merge=unityyamlmerge eol=lf
+*.asset text merge=unityyamlmerge eol=lf
+*.meta text merge=unityyamlmerge eol=lf
+*.mat text merge=unityyamlmerge eol=lf
+*.anim text merge=unityyamlmerge eol=lf
+*.controller text merge=unityyamlmerge eol=lf
+*.inputactions text
+
+# Binary art: stored directly in git (no LFS; keep line endings untouched)
+*.glb binary
+*.gltf binary
+*.obj binary
+*.fbx binary
+*.blend binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.tga binary
+*.psd binary
+*.exr binary
+*.hdr binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.ttf binary
+*.otf binary
