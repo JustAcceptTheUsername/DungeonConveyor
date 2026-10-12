@@ -78,6 +78,14 @@ namespace DungeonConveyor
                  "single static sprite, exactly as before.")]
         public bool AimingHeads = true;
 
+        [Tooltip("Temporary (style test D): bake building sprites with the dither look (Bayer pattern, smooth light " +
+                 "ramp, specular spot) via the DungeonConveyor/DitherBake shader. Off = the normal lit bake.")]
+        public bool DitherLook = false;
+
+        [Tooltip("Temporary (style test D2): full-screen Bayer dither of the game view (DitherScreen shader via the " +
+                 "renderer's DitherScreen feature). Dots are screen pixels, so they stay crisp at any zoom.")]
+        public bool ScreenDither = true;
+
         public List<Entry> Entries = new List<Entry>();
 
         public Entry Find(string id) => Entries.Find(e => e.Id == id);

@@ -55,6 +55,8 @@ namespace DungeonConveyor
             {
                 if (catalog != null)
                 {
+                    Shader.SetGlobalFloat("_DitherScreenOn", catalog.ScreenDither ? 1f : 0f); // style test D2
+                    r.Dither = catalog.DitherLook; // style test D: buildings only
                     foreach (var e in catalog.Entries)
                     {
                         e.Sprite = r.Render(e.Model, e.Scale, 0f, e.Id);
@@ -72,6 +74,7 @@ namespace DungeonConveyor
                         WallHalfY = r.Render(wall.Model, new Vector3(half, wall.Scale, wall.Scale), 90f, "WallY");
                         WallPost = r.Render(wall.Model, new Vector3(0.36f / Mathf.Max(0.01f, size.x), wall.Scale * 1.12f, wall.Scale * 1.15f), 0f, "WallPost");
                     }
+                    r.Dither = false;
                 }
 
                 // Enemies face their direction of travel: one sprite per grid direction (Dir order: +x, -x, +y, -y).
