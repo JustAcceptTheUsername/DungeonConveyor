@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 36bf259524f00984ea4ba2f8100a6044, type: 3}
   m_Name: BuildingCatalog
   m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.BuildingCatalog
+  AimingHeads: 1
   Entries:
   - Id: Core
     Name: Core
@@ -130,7 +131,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Flamethrower
     Name: Flamethrower
-    Model: {fileID: -8952633484966204404, guid: 98a8f8dc2cb0d484fb7e2ad8a39c21d8, type: 3}
+    Model: {fileID: -583922145332642893, guid: 98a8f8dc2cb0d484fb7e2ad8a39c21d8, type: 3}
     Category: 0
     Cost: 250
     Size: {x: 1, y: 1}
@@ -144,7 +145,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Mortar
     Name: Mortar
-    Model: {fileID: 909210449430011193, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+    Model: {fileID: 3937881024602784944, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
     Category: 0
     Cost: 280
     Size: {x: 1, y: 1}
@@ -158,7 +159,7 @@ MonoBehaviour:
     Splash: 1.6
   - Id: LaserTower
     Name: Laser Tower
-    Model: {fileID: -8479218121996466476, guid: 0f4e20bbbc16d6d449a8f259780baf0b, type: 3}
+    Model: {fileID: 7267373001924231959, guid: 0f4e20bbbc16d6d449a8f259780baf0b, type: 3}
     Category: 0
     Cost: 300
     Size: {x: 1, y: 1}
@@ -186,7 +187,7 @@ MonoBehaviour:
     Splash: 0
   - Id: MissileLauncher
     Name: Missile Launcher
-    Model: {fileID: -3226923492129942171, guid: 2a893bdbb6039be428ccf440ffe4f29e, type: 3}
+    Model: {fileID: -4118408284839408809, guid: 2a893bdbb6039be428ccf440ffe4f29e, type: 3}
     Category: 0
     Cost: 350
     Size: {x: 1, y: 1}
