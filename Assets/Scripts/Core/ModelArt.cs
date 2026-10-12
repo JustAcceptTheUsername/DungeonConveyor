@@ -57,11 +57,14 @@ namespace DungeonConveyor
         public Sprite Render(GameObject prefab, float scale = 1f, float yaw = 0f, string name = null) =>
             Render(prefab, Vector3.one * scale, yaw, name);
 
-        /// <summary>Renders the model with a per-axis scale (applied in the model's own axes, before the yaw).</summary>
-        public Sprite Render(GameObject prefab, Vector3 scale, float yaw, string name = null)
+        /// <summary>
+        /// Renders the model with a per-axis scale (applied in the model's own axes, before the yaw). prepare, if
+        /// given, gets the instance before rendering (e.g. to hide or turn parts); the pivot stays the model's origin.
+        /// </summary>
+        public Sprite Render(GameObject prefab, Vector3 scale, float yaw, string name = null, Action<GameObject> prepare = null)
         {
             if (prefab == null) return null;
-            try { return RenderInternal(prefab, scale, yaw, name ?? prefab.name); }
+            try { return RenderInternal(prefab, scale, yaw, name ?? prefab.name, prepare); }
             catch (Exception e)
             {
                 Debug.LogWarning($"Model render failed for {prefab.name}: {e.Message}");
@@ -81,13 +84,14 @@ namespace DungeonConveyor
             return bounds.size;
         }
 
-        Sprite RenderInternal(GameObject prefab, Vector3 scale, float yaw, string name)
+        Sprite RenderInternal(GameObject prefab, Vector3 scale, float yaw, string name, Action<GameObject> prepare)
         {
             var model = Object.Instantiate(prefab, stage);
             model.transform.localPosition = Vector3.zero;
             model.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
             model.transform.localScale = scale;
             foreach (var t in model.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = Layer;
+            prepare?.Invoke(model);
 
             var bounds = new Bounds(model.transform.position, Vector3.zero);
             foreach (var r in model.GetComponentsInChildren<Renderer>()) bounds.Encapsulate(r.bounds);

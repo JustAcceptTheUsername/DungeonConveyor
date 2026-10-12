@@ -55,6 +55,10 @@ namespace DungeonConveyor
             public float Splash;
 
             [System.NonSerialized] public Sprite Sprite; // rendered at runtime by GameArt; also the menu icon
+            // Models with a "Head" node (turrets): the body without the head, and the head alone at
+            // HeadDirections evenly spaced yaws, index 0 = facing as modelled. Null otherwise.
+            [System.NonSerialized] public Sprite BaseSprite;
+            [System.NonSerialized] public Sprite[] HeadSprites;
 
             public bool NeedsOre => Category == BuildCategory.Mining;
             /// <summary>Towers that shoot (or project a field) must stand next to a conveyor.</summary>
@@ -68,6 +72,11 @@ namespace DungeonConveyor
         public const string WallId = "Wall";
         public const string SplitterId = "Splitter";
         public const string RefinerId = "Collector"; // the Refiner reuses the Collector model
+
+        [Tooltip("Temporary (art check): towers whose model has a \"Head\" node turn their head toward their target, " +
+                 "drawn as a body sprite plus one head sprite per direction (GameArt.RenderHead, Tower.Aim). Off = the " +
+                 "single static sprite, exactly as before.")]
+        public bool AimingHeads = true;
 
         public List<Entry> Entries = new List<Entry>();
 

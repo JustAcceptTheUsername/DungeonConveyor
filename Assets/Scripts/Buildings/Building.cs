@@ -208,5 +208,32 @@ namespace DungeonConveyor
         public Enemy Target;
         public LineRenderer Beam;      // laser / tesla bolts
         public float BeamTimer;
+        public SpriteRenderer Head;    // turning head, for models that have one (see GameArt.RenderHead)
+
+        /// <summary>Splits the sprite into body + head when the model has a head, so the tower can aim.</summary>
+        public void SetupHead()
+        {
+            if (Def.BaseSprite == null) return;
+            Renderer.sprite = Def.BaseSprite;
+            Head = new GameObject("Head").AddComponent<SpriteRenderer>();
+            Head.transform.SetParent(transform, false);
+            Head.transform.localPosition = new Vector3(0f, 0f, -0.001f); // just in front of the body
+            Head.sharedMaterial = Renderer.sharedMaterial;
+            Head.sortingOrder = Renderer.sortingOrder;
+            Head.sprite = Def.HeadSprites[0];
+        }
+
+        /// <summary>
+        /// Turns the head toward a grid direction. The model's guns point along model -X (glTF flips X), which lies
+        /// along grid -x; head sprite i is the head turned by i steps of 360/HeadDirections about model Y.
+        /// </summary>
+        public void Aim(Vector2 gridDir)
+        {
+            if (Head == null || gridDir.sqrMagnitude < 1e-6f) return;
+            float yaw = Mathf.Atan2(gridDir.y, -gridDir.x) * Mathf.Rad2Deg;
+            int n = Def.HeadSprites.Length;
+            int i = ((Mathf.RoundToInt(yaw / (360f / n)) % n) + n) % n;
+            Head.sprite = Def.HeadSprites[i];
+        }
     }
 }

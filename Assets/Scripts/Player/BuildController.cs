@@ -292,6 +292,7 @@ namespace DungeonConveyor
                 e.Id == BuildingCatalog.WallId ? go.AddComponent<Wall>() :
                 go.AddComponent<Building>();
             building.Init(e, origin, level, sr);
+            if (building is Tower tower) tower.SetupHead();
             if (building is Wall)
             {
                 sr.sprite = null; // drawn by its snapped pieces instead

@@ -56,7 +56,10 @@ namespace DungeonConveyor
                 if (catalog != null)
                 {
                     foreach (var e in catalog.Entries)
+                    {
                         e.Sprite = r.Render(e.Model, e.Scale, 0f, e.Id);
+                        RenderHead(r, e, catalog.AimingHeads);
+                    }
 
                     // The wall model is a straight segment along its X axis: squash it to half a tile long so two
                     // halves make a tile and pieces from neighbouring tiles meet edge to edge.
@@ -106,6 +109,47 @@ namespace DungeonConveyor
                 // All rocks share a 1x1 base, so the sprite height orders them by how tall they stand.
                 Rocks.Sort((a, b) => a.rect.height.CompareTo(b.rect.height));
             }
+        }
+
+        public const string HeadNode = "Head";
+        public const int HeadDirections = 16;
+
+        /// <summary>
+        /// For models with a Head node (turrets): the body without the head, plus the head alone turned to each of
+        /// HeadDirections yaws so towers can aim. Every sprite keeps the model origin as its pivot, so they line up.
+        /// </summary>
+        static void RenderHead(ModelArt r, BuildingCatalog.Entry e, bool enabled)
+        {
+            e.BaseSprite = null;
+            e.HeadSprites = null;
+            if (!enabled || e.Model == null || FindChild(e.Model.transform, HeadNode) == null) return;
+
+            e.BaseSprite = r.Render(e.Model, Vector3.one * e.Scale, 0f, e.Id + "Base", m => FindChild(m.transform, HeadNode).gameObject.SetActive(false));
+            e.HeadSprites = new Sprite[HeadDirections];
+            for (int i = 0; i < HeadDirections; i++)
+            {
+                float angle = 360f * i / HeadDirections;
+                e.HeadSprites[i] = r.Render(e.Model, Vector3.one * e.Scale, 0f, e.Id + "Head" + i, m =>
+                {
+                    var head = FindChild(m.transform, HeadNode);
+                    head.localRotation = Quaternion.Euler(0f, angle, 0f) * head.localRotation;
+                    // Hide every renderer that isn't part of the head.
+                    foreach (var rend in m.GetComponentsInChildren<Renderer>())
+                        if (!rend.transform.IsChildOf(head)) rend.gameObject.SetActive(false);
+                });
+            }
+            if (e.BaseSprite == null || System.Array.IndexOf(e.HeadSprites, null) >= 0) e.BaseSprite = null; // fall back to the static sprite
+        }
+
+        static Transform FindChild(Transform t, string name)
+        {
+            if (t.name == name) return t;
+            foreach (Transform c in t)
+            {
+                var found = FindChild(c, name);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         static void Add(List<Sprite> list, Sprite s)
