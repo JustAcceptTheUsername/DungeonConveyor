@@ -1,13 +1,18 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
 namespace DungeonConveyor
 {
     /// <summary>
-    /// IMGUI heads-up display on a 1080p-high virtual canvas: gold and Core health at the top, the wave panel at the
-    /// top left, build menu with category tabs at the bottom (tooltips show combat stats), ore info when hovering a
-    /// deposit, a placement hint while placing, and the game-over screen.
+    /// IMGUI heads-up display on a 1080p-high virtual canvas, in the Arcane look (carved stone, gold trim; see
+    /// <see cref="ArcaneSkin"/>): the wave panel and upgrade row at the top left, gold at the top centre, Core bar at the
+    /// top right, build menu with category tabs at the bottom (tooltips show combat stats with the run's upgrades), ore
+    /// info when hovering a deposit, a placement hint while placing, the upgrade-card pick after each wave (with the
+    /// wave's tally), the map-cleared screen and the game-over screen. Reward feedback (gold fly-ins, Core hit, boss
+    /// warning and bar, card deal and pick) runs through <see cref="HudFx"/> on unscaled time. Owns Time.timeScale:
+    /// the chosen game speed, or 0 while a card pick or end screen is up. Falls back to plain panels if the kit is missing.
     /// </summary>
     [RequireComponent(typeof(BuildController))]
     public class HUD : MonoBehaviour
@@ -18,15 +23,62 @@ namespace DungeonConveyor
             (BuildCategory.Defense, "DEFENSES"), (BuildCategory.Logistics, "LOGISTICS"), (BuildCategory.Mining, "MINING"),
         };
 
+        enum Screen_ { None, Cards, Cleared, Over }
+
         float s;           // pixels per virtual unit
         float vw, vh;      // virtual canvas size
+        float lastScale = -1f;
         BuildCategory tab = BuildCategory.Defense;
         BuildController build;
         WaveManager waves;
         ItemFlow flow;
         TileHover hover;
         IsoGrid map;
+        Camera cam;
         readonly List<BuildingCatalog.Entry> shown = new List<BuildingCatalog.Entry>();
+        readonly Dictionary<(int, bool, bool, bool, TextAnchor), GUIStyle> styles = new Dictionary<(int, bool, bool, bool, TextAnchor), GUIStyle>();
+        static bool Skin => ArcaneSkin.Loaded;
+
+        // Effects state.
+        readonly HudFx fx = new HudFx();
+        readonly HudFx.Counter gold = new HudFx.Counter();
+        HudFx.Timer goldRed, goldFlash, coreFlash, coreShake;
+        float coreShakeAmp, coreGhost, coreGhostHold, bossGhost, bossGhostHold, lastBossFrac = 1f;
+        Vector2 goldPx;
+        CoreBuilding hookedCore;
+        bool goldHooked;
+        Enemy lastBoss;
+        float lastGoldChange = -10f;
+        int warnedFor = -1;
+        float bossBannerT0 = -10f;
+        readonly Dictionary<BuildingCatalog.Entry, bool> wasAfford = new Dictionary<BuildingCatalog.Entry, bool>();
+        readonly Dictionary<BuildingCatalog.Entry, float> glint = new Dictionary<BuildingCatalog.Entry, float>();
+
+        // Screens.
+        Screen_ screen;
+        float screenT;
+        List<Run.Card> curOffer;
+        float offerT0;
+        int tallyWave = -1;
+        bool freshTally;
+        int takenBefore;
+        float flyingUntil;
+
+        class PickAnim
+        {
+            public List<Run.Card> Cards;
+            public Rect[] Rects;
+            public int Chosen;
+            public float T0;
+            public Vector2 Target;      // virtual centre of the upgrade slot the card flies to
+            public const float Dur = 0.6f;
+        }
+        PickAnim pickAnim;
+
+        // Pending tooltip (drawn last, on top).
+        string tipTitle, tipTag, tipBody;
+        Rect tipAnchor;
+        bool tipRight;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() => blockers.Clear();
@@ -34,7 +86,7 @@ namespace DungeonConveyor
         /// <summary>True when the screen position (Input System, origin bottom-left) is over a HUD panel.</summary>
         public static bool IsPointerOverUI(Vector2 screenPos)
         {
-            var p = new Vector2(screenPos.x, Screen.height - screenPos.y);
+            var p = new Vector2(screenPos.x, UnityEngine.Screen.height - screenPos.y);
             foreach (var r in blockers) if (r.Contains(p)) return true;
             return false;
         }
@@ -46,14 +98,211 @@ namespace DungeonConveyor
         }
 
         Rect R(float x, float y, float w, float h) => new Rect(x * s, y * s, w * s, h * s);
+        Rect R(Rect v) => R(v.x, v.y, v.width, v.height);
 
-        Rect Panel(float x, float y, float w, float h, Texture2D tex = null)
+        bool CoreLost => build.Core != null && build.Core.Destroyed;
+        bool Picking => waves != null && waves.Offer != null && !waves.AutoPickCards;
+        bool Cleared => waves != null && waves.StageCleared && !CoreLost;
+        bool PickAnimating => pickAnim != null && Time.unscaledTime - pickAnim.T0 < PickAnim.Dur;
+
+        // ---------------------------------------------------------------- update: events, effects, keys
+
+        void Update()
         {
-            var r = R(x, y, w, h);
-            UIStyle.DrawPanel(r, tex);
-            if (Event.current.type == EventType.Repaint) blockers.Add(r);
-            return r;
+            if (waves == null) waves = GetComponent<WaveManager>();
+            if (cam == null) cam = Camera.main;
+            float dt = Time.unscaledDeltaTime;
+            Hook();
+            fx.Update(dt);
+            gold.Tick(dt);
+            goldRed.Tick(dt); goldFlash.Tick(dt); coreFlash.Tick(dt); coreShake.Tick(dt);
+            if (fx.Flies.Count == 0 && gold.Target != build.Gold) gold.Target = build.Gold;
+            TickBars(dt);
+            TickGlints(dt);
+            TickBoss();
+
+            var kind = CoreLost ? Screen_.Over : Picking ? Screen_.Cards : Cleared ? Screen_.Cleared : Screen_.None;
+            if (kind != screen) { screen = kind; screenT = 0f; }
+            screenT += dt;
+            TrackOffer();
+            ReadKeys();
+
+            GameSpeed.Apply(CoreLost || Picking || Cleared);
         }
+
+        /// <summary>Subscribes to the gold and Core events once their sources exist.</summary>
+        void Hook()
+        {
+            if (!goldHooked)
+            {
+                goldHooked = true;
+                gold.Reset(build.Gold);
+                build.GoldChanged += OnGold;
+            }
+            if (build.Core != null && hookedCore != build.Core)
+            {
+                hookedCore = build.Core;
+                coreGhost = hookedCore.Health / hookedCore.MaxHealth;
+                hookedCore.Damaged += OnCoreDamaged;
+            }
+        }
+
+        void OnDestroy()
+        {
+            if (build != null) build.GoldChanged -= OnGold;
+            if (hookedCore != null) hookedCore.Damaged -= OnCoreDamaged;
+        }
+
+        void OnGold(int delta, Vector3? from)
+        {
+            lastGoldChange = Time.unscaledTime;
+            if (delta == 0) return;
+            if (delta < 0)
+            {
+                gold.Target += delta;
+                goldRed.Start(0.45f);
+                return;
+            }
+            bool bossKill = lastBoss != null && lastBoss.Health <= 0f && from.HasValue;
+            if (bossKill) lastBoss = null;
+            void Land()
+            {
+                gold.Target += delta;
+                gold.Bump.Start(bossKill ? 0.4f : 0.25f);
+                if (bossKill) goldFlash.Start(0.55f);
+            }
+            if (from.HasValue && cam != null && !HudFx.ReducedMotion)
+            {
+                var sp = cam.WorldToScreenPoint(from.Value);
+                if (sp.z >= 0f)
+                {
+                    float size = Mathf.Lerp(20f, 40f, Mathf.Clamp01(Mathf.Log10(Mathf.Max(1, delta)) / 2.7f)) * (bossKill ? 1.3f : 1f);
+                    fx.Add(new HudFx.Fly
+                    {
+                        From = new Vector2(Mathf.Clamp(sp.x, 24f, UnityEngine.Screen.width - 24f), Mathf.Clamp(UnityEngine.Screen.height - sp.y, 24f, UnityEngine.Screen.height - 24f)),
+                        To = goldPx,
+                        Dur = bossKill ? 0.6f : 0.5f,
+                        Size = size,
+                        Text = "+" + delta,
+                        Color = UIStyle.GoldColor,
+                        Coin = true,
+                        OnArrive = Land,
+                    });
+                    return;
+                }
+            }
+            Land();
+        }
+
+        void OnCoreDamaged(float amount, bool fromBoss)
+        {
+            var core = build.Core;
+            float before = Mathf.Clamp01((core.Health + amount) / core.MaxHealth);
+            coreGhost = Mathf.Max(coreGhost, before);
+            coreGhostHold = 0.4f;
+            coreFlash.Start(fromBoss ? 0.5f : 0.35f);
+            coreShake.Start(fromBoss ? 0.45f : 0.3f);
+            coreShakeAmp = fromBoss ? 14f : 5f;
+        }
+
+        void TickBars(float dt)
+        {
+            if (build.Core != null)
+            {
+                float f = Mathf.Clamp01(build.Core.Health / build.Core.MaxHealth);
+                coreGhostHold -= dt;
+                if (coreGhostHold <= 0f && coreGhost > f) coreGhost = Mathf.MoveTowards(coreGhost, f, dt * Mathf.Max(0.4f, (coreGhost - f) * 2f));
+                if (coreGhost < f) coreGhost = f;
+            }
+            var boss = waves != null ? waves.Boss : null;
+            if (boss != null)
+            {
+                float f = Mathf.Clamp01(boss.Health / boss.MaxHealth);
+                if (f < lastBossFrac) { bossGhost = Mathf.Max(bossGhost, lastBossFrac); bossGhostHold = 0.35f; }
+                lastBossFrac = f;
+                bossGhostHold -= dt;
+                if (bossGhostHold <= 0f && bossGhost > f) bossGhost = Mathf.MoveTowards(bossGhost, f, dt * Mathf.Max(0.4f, (bossGhost - f) * 2f));
+                if (bossGhost < f) bossGhost = f;
+            }
+            else { lastBossFrac = 1f; bossGhost = 1f; }
+        }
+
+        void TickGlints(float dt)
+        {
+            if (build.Catalog == null) return;
+            foreach (var e in build.Catalog.Entries)
+            {
+                if (!e.Purchasable) continue;
+                bool a = build.CanAfford(e);
+                if (wasAfford.TryGetValue(e, out bool prev) && !prev && a && Time.unscaledTime - lastGoldChange < 0.5f) glint[e] = 0f;
+                wasAfford[e] = a;
+            }
+            var keys = new List<BuildingCatalog.Entry>(glint.Keys);
+            foreach (var k in keys)
+            {
+                glint[k] += dt;
+                if (glint[k] > 0.6f) glint.Remove(k);
+            }
+        }
+
+        void TickBoss()
+        {
+            if (waves == null) return;
+            var boss = waves.Boss;
+            if (boss != null) lastBoss = boss;
+            if (waves.BossNext && waves.NextWaveIn <= 10f && warnedFor != waves.Wave + 1)
+            {
+                warnedFor = waves.Wave + 1;
+                bossBannerT0 = Time.unscaledTime;
+            }
+        }
+
+        bool WarningPulse => waves != null && waves.BossNext && waves.NextWaveIn <= 10f && !CoreLost && screen == Screen_.None;
+
+        /// <summary>Detects a freshly dealt offer (and whether its wave still needs its tally counted up).</summary>
+        void TrackOffer()
+        {
+            if (!Picking) { curOffer = null; return; }
+            if (PickAnimating) { offerT0 = Time.unscaledTime; return; }   // the next card pick waits for the last pick to land
+            if (waves.Offer == curOffer) return;
+            curOffer = waves.Offer;
+            offerT0 = Time.unscaledTime;
+            int w = waves.LastCleared.Wave;
+            freshTally = w != tallyWave;
+            tallyWave = w;
+        }
+
+        void ReadKeys()
+        {
+            var k = Keyboard.current;
+            if (k == null) return;
+            if (screen == Screen_.Cards && curOffer != null && !PickAnimating && Time.unscaledTime - offerT0 > DealEnd(curOffer.Count))
+            {
+                int i = k.digit1Key.wasPressedThisFrame || k.numpad1Key.wasPressedThisFrame ? 0
+                    : k.digit2Key.wasPressedThisFrame || k.numpad2Key.wasPressedThisFrame ? 1
+                    : k.digit3Key.wasPressedThisFrame || k.numpad3Key.wasPressedThisFrame ? 2 : -1;
+                if (i >= 0 && i < curOffer.Count) PickCard(i);
+            }
+            else if (screen == Screen_.Cleared && screenT > 0.35f
+                && (k.spaceKey.wasPressedThisFrame || k.enterKey.wasPressedThisFrame || k.numpadEnterKey.wasPressedThisFrame))
+                NextMap();
+            else if (screen == Screen_.Over && screenT > 0.35f && k.rKey.wasPressedThisFrame)
+                NewRun();
+        }
+
+        void NextMap()
+        {
+            Run.Advance(build.Gold);
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        }
+
+        void NewRun()
+        {
+            Run.Reset();
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        }
+
+        // ---------------------------------------------------------------- OnGUI
 
         void OnGUI()
         {
@@ -62,67 +311,617 @@ namespace DungeonConveyor
             if (hover == null) hover = GetComponent<TileHover>();
             if (map == null) map = GetComponent<IsoGrid>();
 
-            s = Screen.height / 1080f;
-            vw = Screen.width / s;
+            s = UnityEngine.Screen.height / 1080f;
+            vw = UnityEngine.Screen.width / s;
             vh = 1080f;
             UIStyle.EnsureStyles(s);
+            if (!Mathf.Approximately(s, lastScale)) { styles.Clear(); lastScale = s; }
             if (Event.current.type == EventType.Repaint) blockers.Clear();
+            tipTitle = null;
 
             DrawTopBar();
-            if (waves != null) DrawWavePanel();
+            DrawBossBar();
+            if (waves != null) { DrawWavePanel(); DrawUpgradeRow(); }
             DrawPlacementHint();
             DrawHoverInfo();
             if (build.Catalog != null) DrawBuildBar();
-            if (build.Core != null && build.Core.Destroyed) DrawGameOver();
+            DrawBossBanner();
+            if (CoreLost) DrawGameOver();
+            else if (Picking && !PickAnimating) DrawCards();
+            else if (Cleared) DrawStageCleared();
+            if (PickAnimating) DrawPickAnim();
+            DrawFlies();
+            DrawTip();
+        }
+
+        // ---------------------------------------------------------------- primitives
+
+        static GUIStyle None => GUIStyle.none;
+
+        GUIStyle St(float size, bool title, bool bold, bool wrap, TextAnchor a)
+        {
+            int px = Mathf.Max(8, Mathf.RoundToInt(size * s));
+            var key = (px, title, bold, wrap, a);
+            if (styles.TryGetValue(key, out var g)) return g;
+            g = new GUIStyle { fontSize = px, alignment = a, wordWrap = wrap, normal = { textColor = Color.white } };
+            if (Skin) g.font = title ? ArcaneSkin.Title : bold ? ArcaneSkin.BodyBold : ArcaneSkin.Body;
+            else g.fontStyle = title || bold ? FontStyle.Bold : FontStyle.Normal;
+            styles[key] = g;
+            return g;
+        }
+
+        /// <summary>Text in virtual units with a soft drop shadow; <paramref name="title"/> picks the display font.</summary>
+        void Txt(float x, float y, float w, float h, string text, float size, Color c, TextAnchor a = TextAnchor.MiddleLeft,
+            bool title = false, bool bold = false, bool wrap = false, bool shadow = true)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            var g = St(size, title, bold, wrap, a);
+            var r = R(x, y, w, h);
+            if (shadow)
+            {
+                GUI.contentColor = new Color(0f, 0f, 0f, c.a * 0.75f);
+                GUI.Label(new Rect(r.x + 1.5f * s, r.y + 1.5f * s, r.width, r.height), text, g);
+            }
+            GUI.contentColor = c;
+            GUI.Label(r, text, g);
+            GUI.contentColor = Color.white;
+        }
+
+        void TxtC(float x, float y, float w, float h, string text, float size, Color c, bool title = false, bool bold = false, bool wrap = false)
+            => Txt(x, y, w, h, text, size, c, TextAnchor.MiddleCenter, title, bold, wrap);
+
+        void Tint(float a) => GUI.color = new Color(1f, 1f, 1f, a);
+        void Untint() => GUI.color = Color.white;
+
+        /// <summary>Draws a kit frame (or the old procedural panel when the kit is missing) and registers it as a click blocker.</summary>
+        Rect Frame(float x, float y, float w, float h, Texture2D tex, bool block = true)
+        {
+            var r = R(x, y, w, h);
+            if (Skin) UIStyle.Nine(r, tex, s);
+            else UIStyle.DrawPanel(r);
+            if (block && Event.current.type == EventType.Repaint) blockers.Add(r);
+            return r;
+        }
+
+        Rect Panel(float x, float y, float w, float h) => Frame(x, y, w, h, ArcaneSkin.Panel);
+
+        void Block(Rect px)
+        {
+            if (Event.current.type == EventType.Repaint) blockers.Add(px);
+        }
+
+        void Icon(Texture2D t, float x, float y, float w, float h, float alpha = 1f)
+        {
+            if (t == null || Event.current.type != EventType.Repaint) return;
+            Tint(alpha);
+            GUI.DrawTexture(R(x, y, w, h), t, ScaleMode.ScaleToFit);
+            Untint();
+        }
+
+        void Dim(float alpha = 0.55f)
+        {
+            var all = new Rect(0, 0, UnityEngine.Screen.width, UnityEngine.Screen.height);
+            GUI.color = new Color(0f, 0f, 0f, alpha);
+            GUI.DrawTexture(all, UIStyle.White);
+            Untint();
+            Block(all);
+        }
+
+        /// <summary>Gem button (button / hover / pressed art, hover and pressed drawn a little larger for their glow).</summary>
+        bool GemButton(float x, float y, float w, float h, string label, float size, bool enabled = true, bool accent = false)
+        {
+            var r = R(x, y, w, h);
+            Block(r);
+            bool clicked = false;
+            bool over = enabled && r.Contains(Event.current.mousePosition);
+            bool down = over && Mouse.current != null && Mouse.current.leftButton.isPressed;
+            if (enabled && GUI.Button(r, GUIContent.none, None)) clicked = true;
+            if (Event.current.type == EventType.Repaint)
+            {
+                if (!Skin)
+                {
+                    GUI.Box(r, GUIContent.none, over ? UIStyle.TabActive : UIStyle.Tab);
+                }
+                else
+                {
+                    var tex = down ? ArcaneSkin.ButtonPressed : over ? ArcaneSkin.ButtonHover : ArcaneSkin.Button;
+                    float grow = over ? 6f : 0f;
+                    GUI.color = new Color(1f, 1f, 1f, enabled ? 1f : 0.45f);
+                    UIStyle.Nine(R(x - grow, y - grow, w + 2 * grow, h + 2 * grow + (down ? 0f : 0f)), tex, s);
+                    Untint();
+                }
+            }
+            Txt(x, y + (down ? 2f : 0f), w, h, label, size, enabled ? (accent ? UIStyle.Accent : UIStyle.Parchment) : UIStyle.Muted, TextAnchor.MiddleCenter, true);
+            return clicked;
         }
 
         // ---------------------------------------------------------------- top
 
         void DrawTopBar()
         {
-            const float w = 420, h = 56;
-            float x = (vw - w) * 0.5f;
-            Panel(x, 12, w, h);
-            GUI.DrawTexture(R(x + 18, 24, 32, 32), UIStyle.GoldIcon);
-            GUI.Label(R(x + 60, 12, 130, h), build.Gold.ToString("N0"), UIStyle.Big);
+            // Gold: banner plate, coin and the counter (bumps, ticks red when spending, flashes on a boss bounty).
+            const float bw = 320, bh = 84;
+            float x = (vw - bw) * 0.5f, y = 6;
+            Frame(x, y, bw, bh, ArcaneSkin.Banner);
+            string text = gold.Value.ToString("N0");
+            float size = 36f * (1f + 0.18f * Mathf.Sin(gold.Bump.N * Mathf.PI) * (gold.Bump.Active ? 1f : 0f));
+            float tw = St(size, true, false, false, TextAnchor.MiddleLeft).CalcSize(new GUIContent(text)).x / s;
+            float total = 44 + 10 + tw, cx = x + (bw - total) * 0.5f;
+            if (Skin)
+            {
+                Icon(ArcaneSkin.Coin, cx, y + bh * 0.5f - 22, 44, 44);
+                if (goldFlash.Active)
+                {
+                    GUI.color = new Color(1f, 0.85f, 0.4f, 0.8f * goldFlash.Fade);
+                    UIStyle.GlowRing(R(x + 40, y + 12, bw - 80, bh - 24), s, 16f);
+                    Untint();
+                }
+            }
+            else GUI.DrawTexture(R(cx, y + bh * 0.5f - 16, 32, 32), UIStyle.GoldIcon);
+            var col = Color.Lerp(UIStyle.Parchment, UIStyle.Danger, goldRed.Fade);
+            col = Color.Lerp(col, new Color(1f, 0.9f, 0.5f), goldFlash.Fade);
+            Txt(cx + 54, y, tw + 20, bh, text, size, col, TextAnchor.MiddleLeft, true);
+            goldPx = new Vector2((cx + 26) * s, (y + bh * 0.5f) * s);
 
+            DrawCoreBar();
+        }
+
+        void DrawCoreBar()
+        {
             var core = build.Core;
             if (core == null) return;
-            GUI.Label(R(x + 190, 14, 110, 22), "CORE", UIStyle.Small);
-            float f = core.Health / core.MaxHealth;
-            var bar = R(x + 190, 38, 210, 14);
-            UIStyle.DrawBar(bar, f, Color.Lerp(UIStyle.Danger, new Color(0.35f, 0.85f, 0.25f), f));
-            GUI.Label(R(x + 250, 14, 150, 22), $"{Mathf.CeilToInt(core.Health)} / {core.MaxHealth:0}", new GUIStyle(UIStyle.Small) { alignment = TextAnchor.MiddleRight });
+            const float w = 380, h = 78;
+            float x = vw - w - 12, y = 6;
+            var sh = HudFx.Shake(coreShake.Fade, coreShakeAmp * s, Time.unscaledTime);
+            float ox = sh.x / s, oy = sh.y / s;
+            float f = Mathf.Clamp01(core.Health / core.MaxHealth);
+            var frame = Frame(x + ox, y + oy, w, h, ArcaneSkin.BarFrame);
+            var inner = BarInner(x + ox, y + oy, w, h);
+            DrawFill(inner, f, coreGhost, Color.Lerp(UIStyle.Danger, new Color(0.35f, 0.85f, 0.25f), f));
+            if (coreFlash.Active)
+            {
+                GUI.color = new Color(1f, 0.25f, 0.2f, 0.55f * coreFlash.Fade);
+                GUI.DrawTexture(inner, UIStyle.White);
+                GUI.color = new Color(1f, 0.3f, 0.25f, 0.9f * coreFlash.Fade);
+                UIStyle.GlowRing(frame, s, 14f);
+                Untint();
+            }
+            Txt(x + ox, y + oy, w, h, $"CORE  {Mathf.CeilToInt(core.Health)} / {core.MaxHealth:0}", 21, UIStyle.Parchment, TextAnchor.MiddleCenter, false, true);
+        }
+
+        /// <summary>The dark channel inside a bar frame, in pixels.</summary>
+        Rect BarInner(float x, float y, float w, float h) => Skin ? R(x + 36, y + h * 0.5f - 13, w - 72, 26) : R(x + 6, y + 6, w - 12, h - 12);
+
+        /// <summary>Fill plus a lighter ghost segment showing what was just lost.</summary>
+        void DrawFill(Rect inner, float f, float ghost, Color fill)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            GUI.color = new Color(0.1f, 0.09f, 0.1f, 1f);
+            GUI.DrawTexture(inner, UIStyle.White);
+            if (ghost > f)
+            {
+                GUI.color = new Color(1f, 0.82f, 0.7f, 0.9f);
+                GUI.DrawTexture(new Rect(inner.x + inner.width * f, inner.y, inner.width * (ghost - f), inner.height), UIStyle.White);
+            }
+            GUI.color = fill;
+            GUI.DrawTexture(new Rect(inner.x, inner.y, inner.width * f, inner.height), UIStyle.White);
+            GUI.color = new Color(1f, 1f, 1f, 0.18f);
+            GUI.DrawTexture(new Rect(inner.x, inner.y, inner.width * f, inner.height * 0.4f), UIStyle.White);
+            Untint();
+        }
+
+        void DrawBossBar()
+        {
+            var boss = waves != null ? waves.Boss : null;
+            if (boss == null) return;
+            const float w = 640, h = 78;
+            float x = (vw - w) * 0.5f, y = 88;
+            float f = Mathf.Clamp01(boss.Health / boss.MaxHealth);
+            Frame(x, y, w, h, ArcaneSkin.BarFrame);
+            DrawFill(BarInner(x, y, w, h), f, bossGhost, new Color(0.85f, 0.2f, 0.18f));
+            string name = boss.Def != null && !string.IsNullOrEmpty(boss.Def.Name) ? boss.Def.Name.ToUpperInvariant() : "BOSS";
+            Txt(x, y, w, h, $"BOSS  ·  {name}  ·  {Pct(f)}%", 21, UIStyle.Parchment, TextAnchor.MiddleCenter, false, true);
+        }
+
+        /// <summary>Whole percent of a 0..1 fraction; never shows 0% while something is left.</summary>
+        static int Pct(float f) => Mathf.Max(f > 0f ? 1 : 0, Mathf.RoundToInt(f * 100f));
+
+        /// <summary>"BOSS APPROACHING" slams in once per boss wave, holds a moment, then fades.</summary>
+        void DrawBossBanner()
+        {
+            float age = Time.unscaledTime - bossBannerT0;
+            if (age < 0f || age > 2.2f || screen != Screen_.None) return;
+            float sc = Mathf.Lerp(1.7f, 1f, HudFx.OutBack(age / 0.25f));
+            float alpha = Mathf.Clamp01(age / 0.1f) * (1f - Mathf.Clamp01((age - 1.7f) / 0.5f));
+            float bw = 620, bh = 92, x = (vw - bw) * 0.5f, y = 250;
+            var old = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(Vector2.one * sc, new Vector2(vw * 0.5f * s, (y + bh * 0.5f) * s));
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            if (Skin) UIStyle.Nine(R(x, y, bw, bh), ArcaneSkin.Banner, s);
+            Txt(x, y, bw, bh, "BOSS APPROACHING", 38, new Color(UIStyle.Danger.r, UIStyle.Danger.g, UIStyle.Danger.b, alpha), TextAnchor.MiddleCenter, true);
+            Untint();
+            GUI.matrix = old;
         }
 
         void DrawWavePanel()
         {
-            const float x = 12, y = 12, w = 240, h = 150;
+            const float x = 12, y = 12, w = 280, h = 312;
+            Frame(x, y, w, h, ArcaneSkin.HeaderPanel);
+            if (WarningPulse && Skin && Event.current.type == EventType.Repaint)
+            {
+                float p = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f);
+                GUI.color = new Color(1f, 0.2f, 0.15f, 0.25f + 0.55f * p);
+                UIStyle.GlowRing(R(x, y + 14, w, h - 14), s, 14f);
+                Untint();
+            }
+            int inMap = waves.Wave - waves.FirstWave + 1, total = Run.Current.Waves;
+            bool boss = Run.IsBossWave(waves.Wave) && waves.Alive > 0;
+            float cx = x + 30, cw = w - 60;
+            TxtC(cx, y + 50, cw, 22, $"MAP {Run.Stage + 1}", 17, UIStyle.Muted, true);
+            TxtC(cx, y + 70, cw, 36, inMap <= 0 ? "BUILD PHASE" : boss ? "BOSS WAVE" : $"WAVE {inMap} / {total}", inMap <= 0 ? 24 : 28,
+                boss ? UIStyle.Danger : UIStyle.Parchment, true);
+
+            // Enemies / kills block.
+            if (Event.current.type == EventType.Repaint)
+            {
+                GUI.color = new Color(0f, 0f, 0f, 0.28f);
+                GUI.DrawTexture(R(cx, y + 106, cw, 50), UIStyle.White);
+                Untint();
+            }
+            TxtC(cx, y + 107, cw * 0.5f, 20, "Enemies", 16, UIStyle.Muted, false, true);
+            TxtC(cx + cw * 0.5f, y + 107, cw * 0.5f, 20, "Kills", 16, UIStyle.Muted, false, true);
+            TxtC(cx, y + 125, cw * 0.5f, 30, waves.Alive.ToString(), 26, UIStyle.Parchment, true);
+            TxtC(cx + cw * 0.5f, y + 125, cw * 0.5f, 30, waves.Kills.ToString(), 26, UIStyle.Parchment, true);
+
+            string next = waves.AllWavesSent ? "Final wave: clear the map"
+                : $"{(waves.BossNext ? "BOSS" : "Next wave")} in {Mathf.CeilToInt(Mathf.Max(0f, waves.NextWaveIn))}s";
+            TxtC(cx, y + 160, cw, 26, next, 20, waves.BossNext ? UIStyle.Danger : UIStyle.Parchment, false, true);
+
+            if (GemButton(x + 22, y + 192, w - 44, 50, $"SEND NOW  +{waves.EarlyBonus}", 20, !waves.AllWavesSent)) waves.CallEarly();
+
+            // Game speed gems, then the reduced-motion toggle at the row's end.
+            const float sb = 40, gap = 6;
+            float rowW = (GameSpeed.Choices.Length + 1) * sb + GameSpeed.Choices.Length * gap;
+            float sx = x + (w - rowW) * 0.5f, sy = y + 254;
+            for (int i = 0; i < GameSpeed.Choices.Length; i++)
+            {
+                float v = GameSpeed.Choices[i];
+                bool on = Mathf.Approximately(GameSpeed.Speed, v);
+                if (SquareButton(sx + i * (sb + gap), sy, sb, on, v < 1f ? ".5x" : $"{v:0}x")) GameSpeed.Speed = v;
+            }
+            float rx = sx + GameSpeed.Choices.Length * (sb + gap);
+            bool reduced = HudFx.ReducedMotion;
+            var rr = R(rx, sy, sb, sb);
+            if (SquareButton(rx, sy, sb, false, "FX", reduced)) HudFx.ReducedMotion = !reduced;
+            if (rr.Contains(Event.current.mousePosition))
+                SetTip("Reduced motion", reduced ? "ON" : "OFF", reduced ? "Screen shake and fly-ins are off. Click to turn them back on." : "Click to turn off screen shake and fly-ins.", new Rect(rx, sy, sb, sb), true);
+        }
+
+        bool SquareButton(float x, float y, float size, bool active, string label, bool struck = false)
+        {
+            var r = R(x, y, size, size);
+            Block(r);
+            bool over = r.Contains(Event.current.mousePosition);
+            bool clicked = GUI.Button(r, GUIContent.none, None);
+            if (Event.current.type == EventType.Repaint)
+            {
+                if (Skin)
+                {
+                    float g = active || over ? 3f : 0f;
+                    UIStyle.Nine(R(x - g, y - g, size + 2 * g, size + 2 * g), active || over ? ArcaneSkin.SlotHover : ArcaneSkin.Slot, s);
+                }
+                else GUI.Box(r, GUIContent.none, active ? UIStyle.TabActive : UIStyle.Tab);
+            }
+            Txt(x, y, size, size, label, 19, struck ? UIStyle.Muted : active ? UIStyle.Accent : UIStyle.Parchment, TextAnchor.MiddleCenter, false, true);
+            if (struck && Event.current.type == EventType.Repaint)
+            {
+                GUI.color = UIStyle.Danger;
+                var save = GUI.matrix;
+                GUIUtility.RotateAroundPivot(-35f, r.center);
+                GUI.DrawTexture(new Rect(r.center.x - r.width * 0.36f, r.center.y - 1.5f * s, r.width * 0.72f, 3f * s), UIStyle.White);
+                GUI.matrix = save;
+                Untint();
+            }
+            return clicked;
+        }
+
+        // ---------------------------------------------------------------- upgrade row
+
+        const float UpX = 16, UpY = 334, UpCell = 50, UpStride = 56;
+        const int UpCols = 5, UpRows = 3;
+
+        Rect UpgradeRect(int i) => new Rect(UpX + (i % UpCols) * UpStride, UpY + (i / UpCols) * UpStride, UpCell, UpCell);
+
+        static Texture2D IconFor(Run.CardIcon i)
+        {
+            switch (i)
+            {
+                case Run.CardIcon.Fire: return ArcaneSkin.IconFire;
+                case Run.CardIcon.Lightning: return ArcaneSkin.IconLightning;
+                case Run.CardIcon.Frost: return ArcaneSkin.IconFrost;
+                case Run.CardIcon.Poison: return ArcaneSkin.IconPoison;
+                case Run.CardIcon.Damage: return ArcaneSkin.IconDamage;
+                case Run.CardIcon.Speed: return ArcaneSkin.IconSpeed;
+                case Run.CardIcon.Range: return ArcaneSkin.IconRange;
+                default: return ArcaneSkin.IconGold;
+            }
+        }
+
+        static Texture2D CardFrameFor(Run.CardIcon i)
+        {
+            switch (i)
+            {
+                case Run.CardIcon.Fire: return ArcaneSkin.CardFire;
+                case Run.CardIcon.Lightning: return ArcaneSkin.CardLightning;
+                case Run.CardIcon.Frost: return ArcaneSkin.CardFrost;
+                case Run.CardIcon.Poison: return ArcaneSkin.CardPoison;
+                case Run.CardIcon.Gold: return ArcaneSkin.CardGold;
+                default: return ArcaneSkin.CardStat;
+            }
+        }
+
+        /// <summary>One small emblem per card taken this run; hover shows what it does.</summary>
+        void DrawUpgradeRow()
+        {
+            if (!Skin) return;
+            int n = Run.Taken.Count - (flyingUntil > Time.unscaledTime ? 1 : 0);
+            int cap = UpCols * UpRows;
+            for (int i = 0; i < Mathf.Min(n, cap); i++)
+            {
+                var c = Run.Taken[i];
+                var v = UpgradeRect(i);
+                var r = R(v);
+                Block(r);
+                bool over = r.Contains(Event.current.mousePosition);
+                if (Event.current.type == EventType.Repaint)
+                {
+                    float g = over ? 2f : 0f;
+                    UIStyle.Nine(R(v.x - g, v.y - g, v.width + 2 * g, v.height + 2 * g), over ? ArcaneSkin.SlotHover : ArcaneSkin.Slot, s);
+                }
+                Icon(IconFor(c.Icon), v.x + 7, v.y + 7, v.width - 14, v.height - 14);
+                if (over) SetTip(c.Title, c.Tag, c.Text, v, true);
+            }
+            if (n > cap) Txt(UpX, UpY + UpRows * UpStride, 200, 24, $"+{n - cap} more", 16, UIStyle.Muted);
+        }
+
+        // ---------------------------------------------------------------- run screens
+
+        const float CardW = 280, CardH = 397, CardGap = 44, CardTop = 330;
+
+        Rect CardRect(int i, int n)
+        {
+            float total = n * CardW + (n - 1) * CardGap;
+            return new Rect((vw - total) * 0.5f + i * (CardW + CardGap), CardTop, CardW, CardH);
+        }
+
+        float DealStart(int i) => freshTally ? 0.95f + 0.18f * i : 0.1f + 0.15f * i;
+        float DealEnd(int n) => DealStart(n - 1) + 0.5f;
+
+        void DrawCards()
+        {
+            Dim(0.68f);
+            var offer = waves.Offer;
+            if (offer == null) return;
+            float age = Time.unscaledTime - offerT0;
+            bool boss = Run.IsBossWave(waves.PickingFor);
+            int cleared = waves.PickingFor - waves.FirstWave + 1;
+
+            // Banner slams in.
+            float bt = HudFx.OutBack(age / 0.28f);
+            float bsc = Mathf.Lerp(1.5f, 1f, bt), ba = Mathf.Clamp01(age / 0.12f);
+            var old = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(Vector2.one * bsc, new Vector2(vw * 0.5f * s, 160 * s));
+            GUI.color = new Color(1f, 1f, 1f, ba);
+            if (Skin) UIStyle.Nine(R((vw - 620) * 0.5f, 112, 620, 96), ArcaneSkin.Banner, s);
+            Txt((vw - 620) * 0.5f, 112, 620, 96, boss ? "BOSS WAVE CLEARED" : $"WAVE {cleared} CLEARED", 40, new Color(UIStyle.Parchment.r, UIStyle.Parchment.g, UIStyle.Parchment.b, ba), TextAnchor.MiddleCenter, true);
+            Untint();
+            GUI.matrix = old;
+            if (age > 0.2f) TxtC(0, 206, vw, 28, "Choose an upgrade", 22, UIStyle.Muted);
+
+            DrawTally(age);
+
+            for (int i = 0; i < offer.Count; i++)
+            {
+                var c = offer[i];
+                var rect = CardRect(i, offer.Count);
+                float u = Mathf.Clamp01((age - DealStart(i)) / 0.45f);
+                if (u <= 0f) continue;
+                bool dealt = u >= 1f && !PickAnimating;
+                var pr = R(rect);
+                bool hot = dealt && pr.Contains(Event.current.mousePosition);
+                if (dealt && GUI.Button(pr, GUIContent.none, None)) { PickCard(i); return; }
+
+                float lift = hot ? 14f : 0f;
+                DrawCard(c, new Rect(rect.x, rect.y - lift - (1f - HudFx.OutCubic(u)) * 70f, rect.width, rect.height), hot ? 1.04f : 1f, 1f, u, hot, i);
+            }
+
+            float bottom = CardTop + CardH + 22;
+            if (age > DealEnd(offer.Count) - 0.2f)
+                TxtC(0, bottom, vw, 26, "Press 1, 2 or 3, or click a card", 18, UIStyle.Muted);
+            if (waves.CardsOwed > 1)
+                TxtC(0, bottom + 26, vw, 26, $"{waves.CardsOwed - 1} more pick{(waves.CardsOwed > 2 ? "s" : "")} after this one", 16, UIStyle.Muted);
+        }
+
+        /// <summary>Wave tally: kills, gold earned, leaked (counting up), plus a FLAWLESS stamp when nothing got through.</summary>
+        void DrawTally(float age)
+        {
+            var st = waves.LastCleared;
+            if (!freshTally) age += 5f;
+            float y = 244, cw = 200;
+            float x0 = (vw - 3 * cw) * 0.5f;
+            if (age > 0.2f)
+            {
+                string[] labels = { "KILLS", "GOLD EARNED", "LEAKED" };
+                int[] vals = { HudFx.CountUp(st.Kills, age, 0.25f), HudFx.CountUp(st.Gold, age, 0.4f), HudFx.CountUp(st.Leaked, age, 0.55f) };
+                for (int i = 0; i < 3; i++)
+                {
+                    TxtC(x0 + i * cw, y, cw, 20, labels[i], 15, UIStyle.Muted, false, true);
+                    var col = i == 1 ? UIStyle.GoldColor : i == 2 && st.Leaked > 0 ? UIStyle.Danger : UIStyle.Parchment;
+                    TxtC(x0 + i * cw, y + 18, cw, 36, vals[i].ToString("N0"), 30, col, true);
+                }
+            }
+            if (st.Leaked == 0 && age > 1.0f)
+            {
+                float t = HudFx.OutBack((age - 1.0f) / 0.3f);
+                var old = GUI.matrix;
+                var piv = new Vector2((vw * 0.5f + 360) * s, (y + 26) * s);
+                GUIUtility.RotateAroundPivot(-8f, piv);
+                GUIUtility.ScaleAroundPivot(Vector2.one * Mathf.Lerp(1.8f, 1f, t), piv);
+                float a = Mathf.Clamp01((age - 1.0f) / 0.1f);
+                TxtC(vw * 0.5f + 250, y, 220, 52, "FLAWLESS", 30, new Color(UIStyle.GoldColor.r, UIStyle.GoldColor.g, UIStyle.GoldColor.b, a), true);
+                GUI.matrix = old;
+            }
+        }
+
+        /// <summary>
+        /// Draws one spell card whole (never 9-sliced): emblem in the arch, title on the plate, tag and text in the lower
+        /// panel, rarity gem in the top diamond. <paramref name="deal"/> 0..1 plays the drop-in flip.
+        /// </summary>
+        void DrawCard(Run.Card c, Rect v, float scale, float alpha, float deal, bool hot, int index, bool bare = false)
+        {
+            var centre = v.center;
+            float w = v.width * scale, h = v.height * scale;
+            var rr = new Rect(centre.x - w * 0.5f, centre.y - h * 0.5f, w, h);
+            float a = alpha * Mathf.Clamp01(deal * 3f);
+            if (!Skin)
+            {
+                Frame(rr.x, rr.y, rr.width, rr.height, null);
+                TxtC(rr.x, rr.y + 10, rr.width, 40, c.Title, 22, c.Color, true);
+                TxtC(rr.x + 16, rr.y + 100, rr.width - 32, rr.height - 120, c.Text, 17, UIStyle.Parchment, false, false, true);
+                return;
+            }
+
+            // Flip: back (dim frame) shrinks to an edge, face grows out of it.
+            bool back = deal < 0.5f;
+            float fw = back ? w * (1f - deal * 2f) : w * (deal * 2f - 1f);
+            if (deal >= 1f) fw = w;
+            var fr = new Rect(centre.x - fw * 0.5f, rr.y, Mathf.Max(1f, fw), rr.height);
+            if (c.Rare || hot)
+            {
+                float ga = (hot ? 0.9f : 0.55f) * a * (deal >= 1f ? 1f : 0f);
+                GUI.color = c.Rare ? new Color(0.45f, 0.75f, 1f, ga) : new Color(1f, 0.95f, 0.8f, ga);
+                UIStyle.GlowRing(R(fr), s, hot ? 16f : 12f);
+            }
+            GUI.color = back ? new Color(0.28f, 0.26f, 0.3f, a) : new Color(1f, 1f, 1f, a);
+            GUI.DrawTexture(R(fr), CardFrameFor(c.Icon), ScaleMode.StretchToFill);
+            Untint();
+            if (deal < 1f) return;
+
+            float x = rr.x, y = rr.y;
+            float sc = w / CardW;
+            if (bare)
+            {
+                // Shrinking into the upgrade row: just the emblem on the frame, no text.
+                Icon(IconFor(c.Icon), x + w * 0.2f, y + h * 0.2f, w * 0.6f, w * 0.6f, alpha);
+                return;
+            }
+            Icon(c.Rare ? ArcaneSkin.GemRare : ArcaneSkin.GemCommon, x + w * 0.5f - 15 * sc, y + 3 * sc, 30 * sc, 30 * sc, alpha);
+            float es = 118 * sc;
+            Icon(IconFor(c.Icon), x + (w - es) * 0.5f, y + h * 0.17f, es, es, alpha);
+            float ts = c.Title.Length > 15 ? 17 : c.Title.Length > 11 ? 20 : 23;
+            Txt(x + w * 0.1f, y + h * 0.5f, w * 0.8f, h * 0.115f, c.Title, ts * sc, new Color(UIStyle.Parchment.r, UIStyle.Parchment.g, UIStyle.Parchment.b, alpha), TextAnchor.MiddleCenter, true);
+            Txt(x + w * 0.08f, y + h * 0.635f, w * 0.84f, h * 0.05f, c.Tag, 14 * sc, new Color(c.Color.r, c.Color.g, c.Color.b, alpha), TextAnchor.MiddleCenter, false, true);
+            Txt(x + w * 0.12f, y + h * 0.69f, w * 0.76f, h * 0.2f, c.Text, 17 * sc, new Color(UIStyle.Parchment.r, UIStyle.Parchment.g, UIStyle.Parchment.b, alpha), TextAnchor.UpperCenter, false, false, true);
+            Txt(x + w * 0.03f, y + h * 0.03f, 26, 22, (index + 1).ToString(), 15 * sc, new Color(UIStyle.Muted.r, UIStyle.Muted.g, UIStyle.Muted.b, alpha * 0.8f), TextAnchor.MiddleCenter, true);
+        }
+
+        /// <summary>Picks card <paramref name="i"/>: starts the pop / fade / fly animation and hands the card to the wave manager.</summary>
+        void PickCard(int i)
+        {
+            var offer = waves.Offer;
+            if (offer == null || i >= offer.Count) return;
+            var card = offer[i];
+            var rects = new Rect[offer.Count];
+            for (int k = 0; k < rects.Length; k++) rects[k] = CardRect(k, offer.Count);
+            pickAnim = new PickAnim { Cards = new List<Run.Card>(offer), Rects = rects, Chosen = i, T0 = Time.unscaledTime };
+            waves.Pick(card);
+            int slot = Mathf.Min(Run.Taken.Count - 1, UpCols * UpRows - 1);
+            var ur = UpgradeRect(Mathf.Max(0, slot));
+            pickAnim.Target = ur.center;
+            flyingUntil = Time.unscaledTime + PickAnim.Dur;
+            if (HudFx.ReducedMotion) { pickAnim.T0 = Time.unscaledTime - PickAnim.Dur + 0.15f; flyingUntil = pickAnim.T0 + PickAnim.Dur; }
+        }
+
+        void DrawPickAnim()
+        {
+            float age = Time.unscaledTime - pickAnim.T0;
+            float pop = 0.18f;
+            for (int i = 0; i < pickAnim.Cards.Count; i++)
+            {
+                var r = pickAnim.Rects[i];
+                var c = pickAnim.Cards[i];
+                if (i != pickAnim.Chosen)
+                {
+                    float a = 1f - Mathf.Clamp01(age / 0.25f);
+                    if (a > 0f) DrawCard(c, r, 1f, a, 1f, false, i);
+                    continue;
+                }
+                if (age < pop)
+                    DrawCard(c, r, Mathf.Lerp(1f, 1.12f, HudFx.OutCubic(age / pop)), 1f, 1f, true, i);
+                else
+                {
+                    float f = HudFx.InOutCubic((age - pop) / (PickAnim.Dur - pop));
+                    var centre = Vector2.Lerp(r.center, pickAnim.Target, f);
+                    float sc = Mathf.Lerp(1.12f, UpCell / CardW * 0.9f, f);
+                    DrawCard(c, new Rect(centre.x - r.width * 0.5f, centre.y - r.height * 0.5f, r.width, r.height), sc, 1f - 0.2f * f, 1f, false, i, f > 0.3f);
+                }
+            }
+        }
+
+        void DrawStageCleared()
+        {
+            Dim();
+            const float w = 620, h = 430;
+            float x = (vw - w) * 0.5f, y = (vh - h) * 0.5f + 20;
+            float age = screenT;
+            float sc = Mathf.Lerp(0.9f, 1f, HudFx.OutBack(age / 0.3f)), al = Mathf.Clamp01(age / 0.15f);
+            var old = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(Vector2.one * sc, new Vector2(vw * 0.5f * s, (y + h * 0.5f) * s));
+            GUI.color = new Color(1f, 1f, 1f, al);
             Panel(x, y, w, h);
-            GUI.Label(R(x + 16, y + 8, w - 32, 36), waves.Wave == 0 ? "BUILD PHASE" : "WAVE " + waves.Wave, UIStyle.Big);
-            GUI.Label(R(x + 16, y + 44, w - 32, 24), $"Enemies: {waves.Alive}    Kills: {waves.Kills}", UIStyle.Small);
-            GUI.Label(R(x + 16, y + 66, w - 32, 24), $"Next wave in {Mathf.CeilToInt(Mathf.Max(0f, waves.NextWaveIn))}s", UIStyle.Text);
-            var button = R(x + 16, y + 100, w - 32, 36);
-            if (Event.current.type == EventType.Repaint) blockers.Add(button);
-            if (GUI.Button(button, $"SEND NOW  (+{waves.EarlyBonus})", UIStyle.Tab)) waves.CallEarly();
+            if (Skin) UIStyle.Nine(R(x + 30, y - 34, w - 60, 90), ArcaneSkin.Banner, s);
+            Untint();
+            Txt(x + 30, y - 34, w - 60, 90, $"MAP {Run.Stage + 1} CLEARED", 38, UIStyle.Accent, TextAnchor.MiddleCenter, true);
+
+            string[] labels = { "KILLS", "GOLD", "UPGRADES" };
+            int[] vals = { HudFx.CountUp(waves.Kills, age, 0.3f, 0.7f), HudFx.CountUp(build.Gold, age, 0.45f, 0.7f), HudFx.CountUp(Run.Taken.Count, age, 0.6f, 0.5f) };
+            float cw = (w - 100) / 3f;
+            for (int i = 0; i < 3; i++)
+            {
+                TxtC(x + 50 + i * cw, y + 82, cw, 22, labels[i], 16, UIStyle.Muted, false, true);
+                TxtC(x + 50 + i * cw, y + 104, cw, 44, vals[i].ToString("N0"), 36, i == 1 ? UIStyle.GoldColor : UIStyle.Parchment, true);
+            }
+            TxtC(x + 40, y + 160, w - 80, 36, "Your gold and every upgrade carry over to the next map.", 19, UIStyle.Parchment, false, false, true);
+
+            if (age > 1.1f)
+            {
+                float t = HudFx.OutBack((age - 1.1f) / 0.3f);
+                var piv = new Vector2((x + w * 0.5f) * s, (y + 224) * s);
+                var m2 = GUI.matrix;
+                GUIUtility.RotateAroundPivot(-9f, piv);
+                GUIUtility.ScaleAroundPivot(Vector2.one * Mathf.Lerp(1.8f, 1f, t), piv);
+                string stamp = waves.Leaked == 0 ? "FLAWLESS" : "CLEARED";
+                TxtC(x + w * 0.5f - 130, y + 200, 260, 48, stamp, 34, UIStyle.GoldColor, true);
+                GUI.matrix = m2;
+            }
+            if (GemButton(x + w * 0.5f - 130, y + 266, 260, 56, "NEXT MAP", 24, true, true)) NextMap();
+            TxtC(x, y + 334, w, 24, "or press Space / Enter", 16, UIStyle.Muted);
+            GUI.matrix = old;
         }
 
         void DrawPlacementHint()
         {
             var e = build.Placing;
             if (e == null) return;
-            const float w = 520, h = 62;
-            float x = (vw - w) * 0.5f, y = 78;
-            Panel(x, y, w, h);
-            GUI.Label(R(x + 16, y + 6, w - 32, 26), "Placing: " + e.Name, UIStyle.Title);
-            if (build.BlockedReason != null)
-                GUI.Label(R(x + 16, y + 32, w - 32, 24), build.BlockedReason, Colored(UIStyle.Small, UIStyle.Danger));
-            else
-                GUI.Label(R(x + 16, y + 32, w - 32, 24), !build.CapturesLeftDrag
-                    ? "Left click to build  ·  Right click / Esc to cancel"
-                    : e.Id == BuildingCatalog.WallId
-                        ? "Drag to build a wall line  ·  Hold right click to clear  ·  Esc to cancel"
-                        : "Drag to lay a belt (onto a belt to join it)  ·  Hold right click to clear  ·  Esc", UIStyle.Small);
+            const float w = 760, h = 76;
+            float x = (vw - w) * 0.5f, y = waves != null && waves.Boss != null ? 172 : 94;
+            Frame(x, y, w, h, ArcaneSkin.Banner);
+            TxtC(x + 80, y + 8, w - 160, 30, "Placing: " + e.Name, 21, UIStyle.Accent, true);
+            string hint = build.BlockedReason != null ? build.BlockedReason
+                : !build.CapturesLeftDrag ? "Left click to build  ·  Right click / Esc to cancel"
+                : e.Id == BuildingCatalog.WallId ? "Drag to build a wall line  ·  Hold right click to clear  ·  Esc to cancel"
+                : "Drag to lay a belt (onto a belt to join it)  ·  Hold right click to clear  ·  Esc";
+            TxtC(x + 80, y + 38, w - 160, 26, hint, 16, build.BlockedReason != null ? UIStyle.Danger : UIStyle.Parchment, false, true);
         }
 
         /// <summary>What's under the cursor: ore patch contents, or a building's status.</summary>
@@ -158,128 +957,236 @@ namespace DungeonConveyor
             }
             if (title == null) return;
 
-            const float w = 340, h = 64;
-            float x = vw - w - 12, y = 12;
-            Panel(x, y, w, h);
-            GUI.Label(R(x + 14, y + 6, w - 28, 26), title, UIStyle.Title);
-            GUI.Label(R(x + 14, y + 32, w - 28, 24), body, UIStyle.Small);
+            float w = Mathf.Clamp(St(15, false, true, false, TextAnchor.MiddleLeft).CalcSize(new GUIContent(body)).x / s + 190, 420, 760), h = 76;
+            float x = vw - w - 12, y = 92;
+            Frame(x, y, w, h, ArcaneSkin.Banner);
+            TxtC(x + 80, y + 8, w - 160, 28, title, 20, UIStyle.Accent, true);
+            TxtC(x + 80, y + 38, w - 160, 26, body, 16, UIStyle.Parchment, false, true);
         }
 
         // ---------------------------------------------------------------- build menu
 
         void DrawBuildBar()
         {
-            const float cardW = 118, cardH = 140, tabW = 128, tabH = 40;
-            float y = vh - 12 - cardH - 16;
-            float x = 12;
-
-            for (int i = 0; i < Tabs.Length; i++)
-            {
-                var rect = R(x + i * (tabW + 4), y - tabH - 4, tabW, tabH);
-                if (Event.current.type == EventType.Repaint) blockers.Add(rect);
-                if (GUI.Button(rect, Tabs[i].label, tab == Tabs[i].tab ? UIStyle.TabActive : UIStyle.Tab)) tab = Tabs[i].tab;
-            }
+            const float cell = 112, slot = 92, tabW = 156, tabH = 48, panelH = 200, pad = 28;
+            float x = 12, y = vh - 12 - panelH;
 
             shown.Clear();
             foreach (var e in build.Catalog.Entries)
                 if (e.Purchasable && e.Category == tab) shown.Add(e);
-            float w = 16 + Mathf.Max(1, shown.Count) * (cardW + 6) + 4;
-            Panel(x, y, w, cardH + 16);
+            float w = pad * 2 + Mathf.Max(3, shown.Count) * cell;
+            Panel(x, y, w, panelH);
             if (shown.Count == 0)
-                GUI.Label(R(x + 20, y + 8, cardW * 2, cardH), "Nothing here yet", UIStyle.Small);
+                Txt(x + pad + 8, y + 40, cell * 3, 40, "Nothing here yet", 18, UIStyle.Muted);
+
+            // Tabs sit on the panel's top edge.
+            for (int i = 0; i < Tabs.Length; i++)
+            {
+                bool act = tab == Tabs[i].tab;
+                float tx = x + 18 + i * (tabW + 2), ty = y - tabH + 6;
+                var rect = R(tx, ty, tabW, tabH);
+                Block(rect);
+                bool over = rect.Contains(Event.current.mousePosition);
+                if (GUI.Button(rect, GUIContent.none, None)) tab = Tabs[i].tab;
+                if (Skin)
+                {
+                    UIStyle.Nine(rect, act ? ArcaneSkin.TabActive : ArcaneSkin.Tab, s);
+                    if (over && !act) { GUI.color = new Color(1f, 1f, 1f, 0.4f); UIStyle.Nine(rect, ArcaneSkin.TabActive, s); Untint(); }
+                }
+                else GUI.Box(rect, GUIContent.none, act ? UIStyle.TabActive : UIStyle.Tab);
+                Txt(tx, ty - 2, tabW, tabH - 8, Tabs[i].label, 18, act ? UIStyle.Parchment : UIStyle.Accent, TextAnchor.MiddleCenter, true);
+            }
 
             BuildingCatalog.Entry hovered = null;
             for (int i = 0; i < shown.Count; i++)
             {
                 var e = shown[i];
-                float cx = x + 10 + i * (cardW + 6);
-                var rect = R(cx, y + 8, cardW, cardH);
+                float cx = x + pad + i * cell;
+                float sx = cx + (cell - slot) * 0.5f, sy = y + 24;
+                var rect = R(cx, sy - 4, cell, panelH - 40);
                 bool active = build.Placing == e;
                 bool afford = build.CanAfford(e);
-                if (GUI.Button(rect, GUIContent.none, active ? UIStyle.CardActive : UIStyle.Card)) build.Select(e);
-                if (rect.Contains(Event.current.mousePosition)) hovered = e;
+                bool over = rect.Contains(Event.current.mousePosition);
+                if (GUI.Button(rect, GUIContent.none, None)) build.Select(e);
+                if (over) hovered = e;
 
-                var old = GUI.color;
-                if (!afford) GUI.color = new Color(1, 1, 1, 0.45f);
-                if (e.Sprite != null) GUI.DrawTexture(R(cx + 10, y + 14, cardW - 20, 78), e.Sprite.texture, ScaleMode.ScaleToFit);
-                GUI.Label(R(cx, y + 92, cardW, 24), e.Name, UIStyle.CenterSmall);
-                GUI.color = old;
-                DrawCost(cx, y + 116, cardW, e.Cost, afford);
+                if (Event.current.type == EventType.Repaint)
+                {
+                    bool lit = active || over;
+                    if (Skin)
+                    {
+                        float g = lit ? 3f : 0f;
+                        UIStyle.Nine(R(sx - g, sy - g, slot + 2 * g, slot + 2 * g), lit ? ArcaneSkin.SlotHover : ArcaneSkin.Slot, s);
+                    }
+                    else GUI.Box(R(sx, sy, slot, slot), GUIContent.none, lit ? UIStyle.CardActive : UIStyle.Card);
+                    if (glint.TryGetValue(e, out float ga))
+                    {
+                        float k = 1f - ga / 0.6f;
+                        GUI.color = new Color(1f, 0.85f, 0.4f, k);
+                        UIStyle.GlowRing(R(sx, sy, slot, slot), s, 14f);
+                        Untint();
+                    }
+                }
+                Tint(afford ? 1f : 0.45f);
+                if (e.Sprite != null && Event.current.type == EventType.Repaint)
+                    GUI.DrawTexture(R(sx + 10, sy + 8, slot - 20, slot - 20), e.Sprite.texture, ScaleMode.ScaleToFit);
+                Untint();
+                TxtC(cx - 4, sy + slot + 4, cell + 8, 22, e.Name, 17, afford ? UIStyle.Parchment : UIStyle.Muted, false, true);
+                DrawCost(cx, sy + slot + 26, cell, e.Cost, afford);
             }
 
-            if (hovered != null) DrawTooltip(hovered, x, y - tabH - 12);
+            if (hovered != null) DrawTooltip(hovered, x, y - tabH - 6);
         }
 
         void DrawCost(float x, float y, float width, int cost, bool afford)
         {
             var text = cost.ToString("N0");
-            float tw = UIStyle.Text.CalcSize(new GUIContent(text)).x / s;
-            float total = 20 + 6 + tw;
+            float tw = St(17, false, true, false, TextAnchor.MiddleLeft).CalcSize(new GUIContent(text)).x / s;
+            float total = 22 + 5 + tw;
             float cx = x + (width - total) * 0.5f;
-            GUI.DrawTexture(R(cx, y + 2, 20, 20), UIStyle.GoldIcon);
-            GUI.Label(R(cx + 26, y, tw + 4, 24), text, Colored(UIStyle.Text, afford ? Color.white : UIStyle.Danger));
+            if (Skin) Icon(ArcaneSkin.Coin, cx, y + 1, 22, 22);
+            else GUI.DrawTexture(R(cx, y + 2, 20, 20), UIStyle.GoldIcon);
+            Txt(cx + 27, y, tw + 4, 24, text, 17, afford ? UIStyle.GoldColor : UIStyle.Danger, TextAnchor.MiddleLeft, false, true);
         }
 
         void DrawTooltip(BuildingCatalog.Entry e, float x, float bottom)
         {
             string stats = e.Attack != AttackKind.None ? Stats(e) : null;
             string rules = e.NeedsConveyor ? $"Must be placed within {build.ConveyorReach} tiles of a conveyor." : e.NeedsOre ? "Must be placed on ore." : null;
-            float w = 400, h = 112 + (stats != null ? 22 : 0) + (rules != null ? 20 : 0);
+            string desc = e.Description + "\nRight click to remove; hold and drag to clear belts and walls.";
+            const float w = 480, pad = 34;
+            float dh = St(16, false, false, true, TextAnchor.UpperLeft).CalcHeight(new GUIContent(desc), (w - 2 * pad) * s) / s;
+            float h = pad + 34 + (stats != null ? 26 : 0) + (rules != null ? 24 : 0) + dh + pad - 4;
             float y = bottom - h;
             Panel(x, y, w, h);
-            GUI.Label(R(x + 14, y + 8, w - 28, 28), e.Name, UIStyle.Title);
-            GUI.Label(R(x + 14, y + 8, w - 28, 28), $"{e.Size.x}x{e.Size.y}", new GUIStyle(UIStyle.Small) { alignment = TextAnchor.MiddleRight });
-            float ty = y + 38;
+            Txt(x + pad, y + pad - 6, w - 2 * pad, 30, e.Name, 22, UIStyle.Accent, TextAnchor.MiddleLeft, true);
+            Txt(x + pad, y + pad - 6, w - 2 * pad, 30, $"{e.Size.x}x{e.Size.y}", 16, UIStyle.Muted, TextAnchor.MiddleRight);
+            float ty = y + pad + 30;
             if (stats != null)
             {
-                GUI.Label(R(x + 14, ty, w - 28, 22), stats, Colored(UIStyle.Small, UIStyle.Accent));
-                ty += 22;
+                Txt(x + pad, ty, w - 2 * pad, 24, stats, 16, UIStyle.Accent, TextAnchor.MiddleLeft, false, true);
+                ty += 26;
             }
             if (rules != null)
             {
-                GUI.Label(R(x + 14, ty, w - 28, 20), rules, Colored(UIStyle.Small, new Color(0.6f, 0.8f, 1f)));
-                ty += 20;
+                Txt(x + pad, ty, w - 2 * pad, 22, rules, 16, new Color(0.6f, 0.8f, 1f), TextAnchor.MiddleLeft, false, true);
+                ty += 24;
             }
-            var wrap = new GUIStyle(UIStyle.Small) { wordWrap = true, alignment = TextAnchor.UpperLeft };
-            GUI.Label(R(x + 14, ty + 2, w - 28, y + h - ty - 6), e.Description + "\nRight click to remove; hold and drag to clear belts and walls.", wrap);
+            Txt(x + pad, ty + 2, w - 2 * pad, dh + 4, desc, 16, UIStyle.Parchment, TextAnchor.UpperLeft, false, false, true);
         }
 
+        /// <summary>Combat stats including the run's upgrades.</summary>
         static string Stats(BuildingCatalog.Entry e)
         {
+            var m = Run.For(e.Id);
+            float dmg = e.Damage * (1f + m.Damage), rate = e.FireRate * (1f + m.FireRate), range = Combat.RangeOf(e);
+            string text;
             switch (e.Attack)
             {
                 case AttackKind.Laser:
-                case AttackKind.Flame: return $"{e.Damage:0} damage/s  ·  range {e.Range:0.#}";
-                case AttackKind.Slow: return $"Slows enemies {e.Damage * 100f:0}%  ·  range {e.Range:0.#}";
-                case AttackKind.Tesla: return $"{e.Damage:0} damage, chains to {e.Splash:0}  ·  {e.FireRate:0.#}/s  ·  range {e.Range:0.#}";
-                case AttackKind.Mine: return $"{e.Damage:0} damage, blast {e.Splash:0.#}  ·  single use";
+                case AttackKind.Flame: text = $"{dmg * (1f + m.FireRate):0} damage/s  ·  range {range:0.#}"; break;
+                case AttackKind.Slow: return $"Slows enemies {e.Damage * 100f:0}%  ·  range {range:0.#}";
+                case AttackKind.Tesla: text = $"{dmg:0} damage, chains to {e.Splash:0}  ·  {rate:0.#}/s  ·  range {range:0.#}"; break;
+                case AttackKind.Mine: text = $"{dmg:0} damage, blast {e.Splash:0.#}  ·  single use"; break;
                 case AttackKind.Missile:
-                case AttackKind.Mortar: return $"{e.Damage:0} damage, blast {e.Splash:0.#}  ·  {e.FireRate:0.#}/s  ·  range {e.Range:0.#}";
-                default: return $"{e.Damage:0} damage  ·  {e.FireRate:0.#}/s  ·  range {e.Range:0.#}";
+                case AttackKind.Mortar: text = $"{dmg:0} damage, blast {e.Splash:0.#}  ·  {rate:0.#}/s  ·  range {range:0.#}"; break;
+                default: text = $"{dmg:0} damage  ·  {rate:0.#}/s  ·  range {range:0.#}"; break;
             }
+            string[] names = { "fire", "lightning", "frost", "poison" };
+            for (int i = 0; i < names.Length; i++)
+                if (m.Elements[i] > 0f) text += $"  ·  +{m.Elements[i]:0} {names[i]}";
+            return text;
         }
 
         // ---------------------------------------------------------------- game over
 
         void DrawGameOver()
         {
-            Time.timeScale = 0f;
-            const float w = 460, h = 230;
-            float x = (vw - w) * 0.5f, y = (vh - h) * 0.5f;
+            Dim(0.45f);
+            bool boss = waves != null && waves.BossHealthAtLoss >= 0f;
+            float w = 640, h = boss ? 470 : 430;
+            float x = (vw - w) * 0.5f, y = (vh - h) * 0.5f + 20;
+            float age = screenT;
+            float sc = Mathf.Lerp(0.92f, 1f, HudFx.OutBack(age / 0.3f)), al = Mathf.Clamp01(age / 0.2f);
+            var old = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(Vector2.one * sc, new Vector2(vw * 0.5f * s, (y + h * 0.5f) * s));
+            GUI.color = new Color(1f, 1f, 1f, al);
             Panel(x, y, w, h);
-            GUI.Label(R(x, y + 18, w, 50), "THE CORE HAS FALLEN", new GUIStyle(UIStyle.Big) { alignment = TextAnchor.MiddleCenter, normal = { textColor = UIStyle.Danger } });
-            if (waves != null)
-                GUI.Label(R(x, y + 76, w, 26), $"Survived {Mathf.Max(0, waves.Wave - 1)} waves  ·  {waves.Kills} kills", UIStyle.CenterSmall);
-            if (flow != null)
-                GUI.Label(R(x, y + 102, w, 26), $"{flow.Delivered} crystals sold for {flow.GoldFromOre:N0} gold", UIStyle.CenterSmall);
-            var button = R(x + w * 0.5f - 110, y + 150, 220, 52);
-            if (GUI.Button(button, "RESTART", UIStyle.TabActive))
+            if (Skin) UIStyle.Nine(R(x + 20, y - 34, w - 40, 90), ArcaneSkin.Banner, s);
+            Untint();
+            Txt(x + 20, y - 34, w - 40, 90, "THE CORE HAS FALLEN", 34, UIStyle.Danger, TextAnchor.MiddleCenter, true);
+
+            int reached = waves != null ? Mathf.Max(0, waves.Wave - waves.FirstWave + 1) : 0;
+            TxtC(x + 40, y + 70, w - 80, 28, $"Map {Run.Stage + 1}  ·  reached wave {reached} of {Run.Current.Waves}", 21, UIStyle.Parchment, false, true);
+            string[] labels = { "KILLS", "UPGRADES", "CRYSTALS SOLD" };
+            int kills = waves != null ? waves.Kills : 0;
+            int[] vals = { HudFx.CountUp(kills, age, 0.3f, 0.7f), HudFx.CountUp(Run.Taken.Count, age, 0.45f, 0.5f), HudFx.CountUp(flow != null ? flow.Delivered : 0, age, 0.6f, 0.7f) };
+            float cw = (w - 100) / 3f;
+            for (int i = 0; i < 3; i++)
             {
-                Time.timeScale = 1f;
-                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+                TxtC(x + 50 + i * cw, y + 112, cw, 22, labels[i], 15, UIStyle.Muted, false, true);
+                TxtC(x + 50 + i * cw, y + 134, cw, 44, vals[i].ToString("N0"), 34, UIStyle.Parchment, true);
+            }
+            float by = y + 196;
+            if (flow != null) { TxtC(x + 40, by, w - 80, 26, $"{flow.GoldFromOre:N0} gold earned from crystals", 18, UIStyle.Muted); by += 30; }
+            if (boss)
+            {
+                int pct = Pct(waves.BossHealthAtLoss);
+                TxtC(x + 40, by + 4, w - 80, 34, $"The boss had {pct}% health left", 24, UIStyle.Accent, true);
+                by += 44;
+            }
+            if (GemButton(x + w * 0.5f - 130, y + h - 130, 260, 58, "NEW RUN", 26, true, true)) NewRun();
+            TxtC(x, y + h - 62, w, 24, "or press R", 17, UIStyle.Muted);
+            GUI.matrix = old;
+        }
+
+        // ---------------------------------------------------------------- floating pieces
+
+        void DrawFlies()
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            foreach (var f in fx.Flies)
+            {
+                var p = HudFx.Pos(f, 36f * s);
+                float a = 1f - Mathf.Clamp01((f.N - 0.8f) / 0.2f) * 0.6f;
+                float size = f.Size * (1f + 0.15f * Mathf.Sin(f.N * Mathf.PI));
+                var col = new Color(f.Color.r, f.Color.g, f.Color.b, a);
+                var g = St(size, true, false, false, TextAnchor.MiddleCenter);
+                float cw = 200f * s, ch = size * 1.6f * s;
+                float tw = g.CalcSize(new GUIContent(f.Text)).x;
+                var r = new Rect(p.x - cw * 0.5f + (f.Coin ? 10f * s : 0f), p.y - ch * 0.5f, cw, ch);
+                GUI.contentColor = new Color(0f, 0f, 0f, a * 0.8f);
+                GUI.Label(new Rect(r.x + 1.5f * s, r.y + 1.5f * s, r.width, r.height), f.Text, g);
+                GUI.contentColor = col;
+                GUI.Label(r, f.Text, g);
+                GUI.contentColor = Color.white;
+                if (f.Coin && Skin)
+                {
+                    float cs = size * 0.75f * s;
+                    GUI.color = new Color(1f, 1f, 1f, a);
+                    GUI.DrawTexture(new Rect(p.x - tw * 0.5f - cs + 6f * s, p.y - cs * 0.5f, cs, cs), ArcaneSkin.Coin, ScaleMode.ScaleToFit);
+                    Untint();
+                }
             }
         }
 
-        static GUIStyle Colored(GUIStyle style, Color c) => new GUIStyle(style) { normal = { textColor = c } };
+        void SetTip(string title, string tag, string body, Rect anchorV, bool right)
+        {
+            tipTitle = title; tipTag = tag; tipBody = body; tipAnchor = anchorV; tipRight = right;
+        }
+
+        void DrawTip()
+        {
+            if (tipTitle == null) return;
+            const float w = 320, pad = 30;
+            float dh = St(16, false, false, true, TextAnchor.UpperLeft).CalcHeight(new GUIContent(tipBody), (w - 2 * pad) * s) / s;
+            float h = pad + 26 + 22 + dh + pad - 4;
+            float x = tipAnchor.xMax + 12, y = Mathf.Min(tipAnchor.y, vh - h - 12);
+            if (x + w > vw - 8) x = tipAnchor.x - w - 12;
+            Panel(x, y, w, h);
+            Txt(x + pad, y + pad - 8, w - 2 * pad, 26, tipTitle, 19, UIStyle.Accent, TextAnchor.MiddleLeft, true);
+            if (!string.IsNullOrEmpty(tipTag)) Txt(x + pad, y + pad + 16, w - 2 * pad, 20, tipTag, 14, UIStyle.Muted, TextAnchor.MiddleLeft, false, true);
+            Txt(x + pad, y + pad + 40, w - 2 * pad, dh + 4, tipBody, 16, UIStyle.Parchment, TextAnchor.UpperLeft, false, false, true);
+        }
     }
 }
