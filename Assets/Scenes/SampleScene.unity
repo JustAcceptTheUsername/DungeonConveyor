@@ -274,6 +274,7 @@ MonoBehaviour:
   Margin: 2
   ZoomStep: 1.15
   ZoomSmoothing: 14
+  DragThreshold: 6
 --- !u!1 &336504970
 GameObject:
   m_ObjectHideFlags: 0
@@ -307,6 +308,20 @@ MonoBehaviour:
   Width: 50
   Height: 50
   Ground: {fileID: 1573557423}
+  BaseDistance: {x: 3, y: 8}
+  SpawnMinDistance: 20
+  SpawnCount: {x: 1, y: 4}
+  RandomShape: 1
+  ShapeMinCoverage: 0.7
+  ShapeSolidCenter: 9
+  FillVoidWithRocks: 0
+  NoiseScale: 0.01
+  Octaves: 4
+  HeightCurve: 1.4
+  BaseLevel: 1
+  BaseFlatten: {x: 3.5, y: 8}
+  OrePatches: {x: 5, y: 8}
+  OreMinBaseDistance: 6
 --- !u!156049354 &336504972
 Grid:
   m_ObjectHideFlags: 0

@@ -17,6 +17,7 @@ namespace DungeonConveyor
         static Sprite[,] columns;
         static Sprite highlight;
         static Sprite[] bridges;
+        static Sprite[] arrows;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
@@ -24,6 +25,7 @@ namespace DungeonConveyor
             columns = null;
             highlight = null;
             bridges = null;
+            arrows = null;
         }
 
         public static Sprite Column(int level, int variant)
@@ -35,6 +37,13 @@ namespace DungeonConveyor
         }
 
         public static Sprite Highlight => highlight != null ? highlight : highlight = MakeHighlight();
+
+        /// <summary>A chevron lying flat on a top face, pointing along grid direction dir (see Dir).</summary>
+        public static Sprite PathArrow(int dir)
+        {
+            if (arrows == null) arrows = new Sprite[4];
+            return arrows[dir] != null ? arrows[dir] : arrows[dir] = MakeArrow(dir);
+        }
 
         /// <summary>
         /// Wooden bridge deck. connections = sides that continue (1 +x, 2 -x, 4 +y, 8 -y); every other side gets
@@ -186,6 +195,25 @@ namespace DungeonConveyor
                     px[row * W + x] = inside > 0f && inside < 3f ? Color.white : inside >= 3f ? new Color(1f, 1f, 1f, 0.12f) : Color.clear;
                 }
             return MakeSprite(px, W, TopH, new Vector2(0.5f, 0.5f), "Highlight");
+        }
+
+        static Sprite MakeArrow(int dir)
+        {
+            const float tip = 0.22f, thickness = 0.16f, span = 0.3f;
+            var px = new Color[W * TopH];
+            for (int row = 0; row < TopH; row++)
+                for (int x = 0; x < W; x++)
+                {
+                    CellUV(x, row, out float u, out float v);
+                    // Into the arrow's frame: `along` points where it points, `across` is sideways.
+                    float du = u - 0.5f, dv = v - 0.5f;
+                    float along = dir == 0 ? du : dir == 1 ? -du : dir == 2 ? dv : -dv;
+                    float across = dir < 2 ? dv : du;
+                    float s = along + Mathf.Abs(across);
+                    bool on = s < tip && s > tip - thickness && Mathf.Abs(across) < span;
+                    px[(TopH - 1 - row) * W + x] = on ? Color.white : Color.clear;
+                }
+            return MakeSprite(px, W, TopH, new Vector2(0.5f, 0.5f), "PathArrow");
         }
 
         static Sprite MakeSprite(Color[] px, int w, int h, Vector2 pivot, string name)

@@ -15,9 +15,17 @@ namespace DungeonConveyor
     {
         const int Layer = 31;
         const float PixelsPerCameraUnit = 160f;
-        static readonly Quaternion ViewRotation = Quaternion.Euler(30f, 45f, 0f);
+        /// <summary>The angle models are seen from (BuildingModels uses it to stand live models in the same view).</summary>
+        public static readonly Quaternion ViewRotation = Quaternion.Euler(30f, 45f, 0f);
         // A ground square 1 unit wide projects to a diamond √2 camera units wide; on the grid that diamond is 1 world unit.
         static readonly float PixelsPerWorldUnit = PixelsPerCameraUnit * Mathf.Sqrt(2f);
+        /// <summary>World units per model unit, seen from ViewRotation.</summary>
+        public static readonly float WorldPerModelUnit = PixelsPerCameraUnit / PixelsPerWorldUnit;
+
+        // Key light, relative to the model.
+        public static readonly Quaternion KeyLightRotation = Quaternion.Euler(50f, 10f, 0f);
+        public const float KeyLightIntensity = 1.3f;
+        public static readonly Color KeyLightColor = new Color(1f, 0.93f, 0.85f);
 
         readonly Transform stage;
         readonly Camera cam;
@@ -56,9 +64,9 @@ namespace DungeonConveyor
             light = new GameObject("Light").AddComponent<Light>();
             light.transform.SetParent(stage, false);
             light.type = LightType.Directional;
-            light.transform.rotation = Quaternion.Euler(50f, 10f, 0f);
-            light.intensity = 1.3f;
-            light.color = new Color(1f, 0.93f, 0.85f);
+            light.transform.rotation = KeyLightRotation;
+            light.intensity = KeyLightIntensity;
+            light.color = KeyLightColor;
             light.cullingMask = 1 << Layer;
         }
 

@@ -24,6 +24,8 @@ namespace DungeonConveyor
         public static readonly List<Sprite> RockAccents = new List<Sprite>();
         /// <summary>Wall pieces that snap together: a half-tile segment along grid x, one along grid y, and a joint post.</summary>
         public static Sprite WallHalfX, WallHalfY, WallPost;
+        /// <summary>Model scales those pieces are rendered with (WallHalfY is WallHalf turned 90 degrees).</summary>
+        public static Vector3 WallHalfScale, WallPostScale;
 
         static bool ready;
 
@@ -70,9 +72,11 @@ namespace DungeonConveyor
                     {
                         var size = r.MeasureSize(wall.Model);
                         float half = 0.5f / Mathf.Max(0.01f, size.x);
-                        WallHalfX = r.Render(wall.Model, new Vector3(half, wall.Scale, wall.Scale), 0f, "WallX");
-                        WallHalfY = r.Render(wall.Model, new Vector3(half, wall.Scale, wall.Scale), 90f, "WallY");
-                        WallPost = r.Render(wall.Model, new Vector3(0.36f / Mathf.Max(0.01f, size.x), wall.Scale * 1.12f, wall.Scale * 1.15f), 0f, "WallPost");
+                        WallHalfScale = new Vector3(half, wall.Scale, wall.Scale);
+                        WallPostScale = new Vector3(0.36f / Mathf.Max(0.01f, size.x), wall.Scale * 1.12f, wall.Scale * 1.15f);
+                        WallHalfX = r.Render(wall.Model, WallHalfScale, 0f, "WallX");
+                        WallHalfY = r.Render(wall.Model, WallHalfScale, 90f, "WallY");
+                        WallPost = r.Render(wall.Model, WallPostScale, 0f, "WallPost");
                     }
                     r.Dither = false;
                 }

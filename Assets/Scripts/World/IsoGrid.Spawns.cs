@@ -70,7 +70,7 @@ namespace DungeonConveyor
                     if (Bridges.Count >= target) break;
                     if (Bridges.Contains(cand)) continue;
                     var landing = (Vector2)cand.Landing + Vector2.one * 0.5f;
-                    if (Vector2.Distance(landing, BaseCenter) < minBase || NearSpawn(landing, SpawnSpacing)) continue;
+                    if (DistanceToBase(landing) < minBase || NearSpawn(landing, SpawnSpacing)) continue;
                     if (cand.Cells.Exists(taken.Contains)) continue;
                     Bridges.Add(cand);
                     foreach (var c in cand.Cells)

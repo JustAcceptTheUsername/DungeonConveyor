@@ -9,7 +9,10 @@ namespace DungeonConveyor
         public BuildingCatalog.Entry Def { get; private set; }
         public Vector2Int Origin { get; private set; } // footprint cell with the smallest x and y
         public int Level { get; private set; }
+        /// <summary>Its sprite. With a live model (see ShowModel) it is no longer drawn but still used for clicking.</summary>
         public SpriteRenderer Renderer { get; private set; }
+        /// <summary>The live 3D model instance, if it has one.</summary>
+        public GameObject Model { get; private set; }
 
         public bool IsCore => Def != null && Def.Id == BuildingCatalog.CoreId;
         public Vector2Int Size => this is Conveyor ? Vector2Int.one : Def.Size;
@@ -22,6 +25,14 @@ namespace DungeonConveyor
             Origin = origin;
             Level = level;
             Renderer = renderer;
+        }
+
+        /// <summary>Stands the live 3D model in for the sprite (see BuildingModels).</summary>
+        public void ShowModel(IsoGrid map)
+        {
+            if (Def.Model == null) return;
+            Model = BuildingModels.Spawn(map, Def.Model, GridCenter, Level, Vector3.one * Def.Scale, 0f, Renderer.sortingOrder, transform);
+            Renderer.forceRenderingOff = true; // keeps its bounds and pixels for clicking and rock fading
         }
 
         public bool Covers(Vector2Int c) => c.x >= Origin.x && c.y >= Origin.y && c.x < Origin.x + Size.x && c.y < Origin.y + Size.y;
@@ -139,11 +150,48 @@ namespace DungeonConveyor
         /// <summary>How many pieces it is drawn with: 2 for a straight run or a lone wall, more where it turns or branches.</summary>
         public int PieceCount { get; private set; }
 
+        readonly List<GameObject> models = new List<GameObject>();
+
         /// <summary>Rebuilds the pieces; isWall says which neighbouring cells hold walls.</summary>
-        public void Shape(IsoGrid map, System.Func<Vector2Int, bool> isWall, Material material)
+        public void Shape(IsoGrid map, System.Func<Vector2Int, bool> isWall, Material material, bool liveModels)
         {
+            if (liveModels && Def.Model != null)
+            {
+                PieceCount = BuildModels(map, isWall);
+                return;
+            }
             PieceCount = Build(map, Origin, Level, isWall, material, transform, parts, 0, map.SortOrder(Origin) + 1, Color.white);
             for (int i = PieceCount; i < parts.Count; i++) parts[i].enabled = false;
+        }
+
+        /// <summary>The same pieces as Build lays out, as live models (see BuildingModels).</summary>
+        int BuildModels(IsoGrid map, System.Func<Vector2Int, bool> isWall)
+        {
+            foreach (var m in models) Destroy(m.transform.parent.gameObject);
+            models.Clear();
+            bool px = isWall(Origin + Vector2Int.right), nx = isWall(Origin + Vector2Int.left);
+            bool py = isWall(Origin + Vector2Int.up), ny = isWall(Origin + Vector2Int.down);
+            bool alongX = px || nx, alongY = py || ny;
+            int order = map.SortOrder(Origin) + 1;
+
+            void Piece(bool y, Vector2 offset, bool post = false) =>
+                models.Add(BuildingModels.Spawn(map, Def.Model, (Vector2)Origin + offset, Level,
+                    post ? GameArt.WallPostScale : GameArt.WallHalfScale, y && !post ? 90f : 0f, order, transform));
+
+            if (!(alongX && alongY))
+            {
+                // Lone walls and straight runs: a full segment along the run (x if alone).
+                var h = alongY ? new Vector2(0f, 0.25f) : new Vector2(0.25f, 0f);
+                Piece(alongY, h);
+                Piece(alongY, -h);
+                return models.Count;
+            }
+            if (px) Piece(false, new Vector2(0.25f, 0f));
+            if (py) Piece(true, new Vector2(0f, 0.25f));
+            Piece(false, Vector2.zero, post: true);
+            if (nx) Piece(false, new Vector2(-0.25f, 0f));
+            if (ny) Piece(true, new Vector2(0f, -0.25f));
+            return models.Count;
         }
 
         /// <summary>
@@ -208,11 +256,26 @@ namespace DungeonConveyor
         public Enemy Target;
         public LineRenderer Beam;      // laser / tesla bolts
         public float BeamTimer;
-        public SpriteRenderer Head;    // turning head, for models that have one (see GameArt.RenderHead)
+        public SpriteRenderer Head;    // turning head sprite, for models that have one (see GameArt.RenderHead)
+        Transform headNode;            // or, with a live model, its Head node
+        Quaternion headRest;
 
-        /// <summary>Splits the sprite into body + head when the model has a head, so the tower can aim.</summary>
-        public void SetupHead()
+        public bool CanAim => Head != null || headNode != null;
+
+        /// <summary>
+        /// Lets the tower aim: with a live model, by turning its Head node (if it has one); otherwise by splitting the
+        /// sprite into body + head sprites.
+        /// </summary>
+        public void SetupHead(bool aimingHeads)
         {
+            if (!aimingHeads) return;
+            if (Model != null)
+            {
+                headNode = BuildingModels.FindChild(Model.transform, GameArt.HeadNode);
+                if (headNode != null) headRest = headNode.localRotation;
+                return;
+            }
+            if (Def.BaseSprite == null) return;
             if (Def.BaseSprite == null) return;
             Renderer.sprite = Def.BaseSprite;
             Head = new GameObject("Head").AddComponent<SpriteRenderer>();
@@ -229,8 +292,13 @@ namespace DungeonConveyor
         /// </summary>
         public void Aim(Vector2 gridDir)
         {
-            if (Head == null || gridDir.sqrMagnitude < 1e-6f) return;
+            if (!CanAim || gridDir.sqrMagnitude < 1e-6f) return;
             float yaw = Mathf.Atan2(gridDir.y, -gridDir.x) * Mathf.Rad2Deg;
+            if (headNode != null)
+            {
+                headNode.localRotation = Quaternion.Euler(0f, yaw, 0f) * headRest;
+                return;
+            }
             int n = Def.HeadSprites.Length;
             int i = ((Mathf.RoundToInt(yaw / (360f / n)) % n) + n) % n;
             Head.sprite = Def.HeadSprites[i];

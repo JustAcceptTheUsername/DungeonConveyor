@@ -452,11 +452,11 @@ namespace DungeonConveyor
                 for (int y = 0; y < map.Height && refusal == null; y++)
                 {
                     var c = new Vector2Int(x, y);
-                    if (!BeltFree(c, null) || NearBelt(c, 2)) continue;
+                    if (!BeltFree(c, null) || NearBelt(c, build.ConveyorReach + Mathf.Max(turret.Size.x, turret.Size.y))) continue;
                     build.CanPlace(turret, c, out _, out var reason);
                     if (reason != null && reason.Contains("conveyor")) refusal = $"{c}: \"{reason}\"";
                 }
-            Check("towers need a conveyor next to them", refusal != null, refusal ?? "no refusal found");
+            Check($"towers need a conveyor within {build.ConveyorReach} tiles", refusal != null, refusal ?? "no refusal found");
         }
 
         bool NearBelt(Vector2Int c, int r)

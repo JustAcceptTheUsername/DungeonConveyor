@@ -223,7 +223,7 @@ namespace DungeonConveyor
         void DrawTooltip(BuildingCatalog.Entry e, float x, float bottom)
         {
             string stats = e.Attack != AttackKind.None ? Stats(e) : null;
-            string rules = e.NeedsConveyor ? "Must be placed next to a conveyor." : e.NeedsOre ? "Must be placed on ore." : null;
+            string rules = e.NeedsConveyor ? $"Must be placed within {build.ConveyorReach} tiles of a conveyor." : e.NeedsOre ? "Must be placed on ore." : null;
             float w = 400, h = 112 + (stats != null ? 22 : 0) + (rules != null ? 20 : 0);
             float y = bottom - h;
             Panel(x, y, w, h);

@@ -19,6 +19,12 @@ namespace DungeonConveyor
 
         public int Width = 50, Height = 50;
         public Tilemap Ground;
+        [Tooltip("Roguelike run: map size, bridge and Core counts come from the current stage (see Run), and every " +
+                 "cell up to that size exists (the painted Ground tilemap is ignored). Off = the painted grid with " +
+                 "the settings below and one Core.")]
+        public bool RoguelikeRun = true;
+        [Tooltip("Number of Cores (bases) when not in a roguelike run.")]
+        public int CoreCount = 1;
         [Tooltip("Base centre is placed this many cells from the map centre (min..max).")]
         public Vector2 BaseDistance = new Vector2(3f, 8f);
         [Tooltip("Preferred minimum distance in cells between the base centre and each enemy spawn.")]
@@ -59,7 +65,9 @@ namespace DungeonConveyor
 
         public bool[,] Exists { get; private set; }
         public int[,] Heights { get; private set; }
-        public Vector2Int BaseOrigin { get; private set; }  // bottom-left cell of the 4x4 base
+        /// <summary>Bottom-left cell of each 4x4 base, one per Core. The first is the main base.</summary>
+        public readonly List<Vector2Int> BaseOrigins = new List<Vector2Int>();
+        public Vector2Int BaseOrigin => BaseOrigins[0];
         public bool[,] Ore { get; private set; }
         public Building[,] Buildings { get; private set; }
 
@@ -71,8 +79,30 @@ namespace DungeonConveyor
         /// <summary>Enemy movement rule: 4-directional steps, climbing or dropping at most MaxClimb levels.</summary>
         public bool CanStep(Vector2Int from, Vector2Int to) =>
             HasCell(from) && HasCell(to) && Mathf.Abs(Heights[to.x, to.y] - Heights[from.x, from.y]) <= MaxClimb;
-        public bool IsBase(Vector2Int c) => c.x >= BaseOrigin.x && c.y >= BaseOrigin.y && c.x < BaseOrigin.x + BaseSize && c.y < BaseOrigin.y + BaseSize;
-        public Vector2 BaseCenter => (Vector2)BaseOrigin + Vector2.one * (BaseSize * 0.5f);
+        public bool IsBase(Vector2Int c) => BaseIndexAt(c) >= 0;
+        /// <summary>Which base covers this cell, or -1.</summary>
+        public int BaseIndexAt(Vector2Int c)
+        {
+            for (int i = 0; i < BaseOrigins.Count; i++)
+                if (InBase(c, i)) return i;
+            return -1;
+        }
+        public bool InBase(Vector2Int c, int i)
+        {
+            var o = BaseOrigins[i];
+            return c.x >= o.x && c.y >= o.y && c.x < o.x + BaseSize && c.y < o.y + BaseSize;
+        }
+        public Vector2 BaseCenter => BaseCenterOf(0);
+        public Vector2 BaseCenterOf(int i) => (Vector2)BaseOrigins[i] + Vector2.one * (BaseSize * 0.5f);
+        /// <summary>Distance from a grid point to the nearest base centre.</summary>
+        public float DistanceToBase(Vector2 p)
+        {
+            float best = float.MaxValue;
+            for (int i = 0; i < BaseOrigins.Count; i++) best = Mathf.Min(best, Vector2.Distance(p, BaseCenterOf(i)));
+            return best;
+        }
+        /// <summary>The Core enemies from this bridge attack: bridges are shared out between the Cores in turn.</summary>
+        public int CoreFor(Bridge b) => Mathf.Max(0, Bridges.IndexOf(b)) % Mathf.Max(1, BaseOrigins.Count);
 
         public Vector3 CellCenter(Vector2Int c) => Grid.GetCellCenterWorld((Vector3Int)c);
         /// <summary>World position of a fractional grid position (cell (x, y) centred at (x, y)) at an elevation in levels.</summary>
@@ -109,21 +139,31 @@ namespace DungeonConveyor
 
         void Awake()
         {
+            if (RoguelikeRun)
+            {
+                var stage = Run.Current;
+                Width = Height = stage.Size;
+                SpawnCount = new Vector2Int(stage.Bridges, stage.Bridges);
+                CoreCount = stage.Cores;
+            }
             Exists = new bool[Width, Height];
             Heights = new int[Width, Height];
             for (int x = 0; x < Width; x++)
                 for (int y = 0; y < Height; y++)
-                    Exists[x, y] = Ground != null && Ground.HasTile(new Vector3Int(x, y, 0));
+                    Exists[x, y] = RoguelikeRun || (Ground != null && Ground.HasTile(new Vector3Int(x, y, 0)));
 
             Ore = new bool[Width, Height];
             Buildings = new Building[Width, Height];
 
             if (RandomShape) CutShape();
-            PlaceBase();
+            PlaceBases();
             GenerateTerrain();
+            for (int i = 1; i < BaseOrigins.Count; i++) EnsurePathToBase(BesideBase(i), 0); // Cores linked up
             PlaceSpawns();
             PlaceOres();
-            foreach (var bridge in Bridges) EnsurePathToBase(bridge.Landing);
+            // Each bridge must reach the Core its enemies attack. Grading one route can disturb another, so recheck.
+            for (int pass = 0; pass < 3; pass++)
+                foreach (var bridge in Bridges) EnsurePathToBase(bridge.Landing, CoreFor(bridge));
 
             if (GetComponent<MapView>() == null) gameObject.AddComponent<MapView>();
             if (GetComponent<TileHover>() == null) gameObject.AddComponent<TileHover>();
@@ -133,6 +173,7 @@ namespace DungeonConveyor
             if (GetComponent<ItemFlow>() == null) gameObject.AddComponent<ItemFlow>();
             if (GetComponent<WaveManager>() == null) gameObject.AddComponent<WaveManager>();
             if (GetComponent<Combat>() == null) gameObject.AddComponent<Combat>();
+            if (GetComponent<EnemyPathView>() == null) gameObject.AddComponent<EnemyPathView>();
         }
 
         // ---------------------------------------------------------------- terrain
@@ -155,21 +196,34 @@ namespace DungeonConveyor
                     max = Mathf.Max(max, n);
                 }
 
-            var baseCenter = BaseCenter;
             for (int x = 0; x < Width; x++)
                 for (int y = 0; y < Height; y++)
                 {
                     float n = Mathf.Pow(Mathf.InverseLerp(min, max, noise[x, y]), HeightCurve);
                     float h = Mathf.Lerp(MinLevel, MaxLevel, n);
-                    float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), baseCenter);
+                    float d = DistanceToBase(new Vector2(x + 0.5f, y + 0.5f));
                     h = Mathf.Lerp(BaseLevel, h, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(BaseFlatten.x, BaseFlatten.y, d)));
                     Heights[x, y] = Mathf.Clamp(Mathf.RoundToInt(h), MinLevel, MaxLevel);
                 }
 
             for (int i = 0; i < 2; i++) RemoveSpikes();
-            for (int x = 0; x < BaseSize; x++)
-                for (int y = 0; y < BaseSize; y++)
-                    Heights[BaseOrigin.x + x, BaseOrigin.y + y] = BaseLevel;
+            foreach (var o in BaseOrigins)
+                for (int x = 0; x < BaseSize; x++)
+                    for (int y = 0; y < BaseSize; y++)
+                        Heights[o.x + x, o.y + y] = BaseLevel;
+        }
+
+        /// <summary>A map cell right next to base i (left of it, or failing that any side).</summary>
+        Vector2Int BesideBase(int i)
+        {
+            var o = BaseOrigins[i];
+            for (int k = 0; k < BaseSize; k++)
+            {
+                Vector2Int[] ring = { o + new Vector2Int(-1, k), o + new Vector2Int(k, -1), o + new Vector2Int(BaseSize, k), o + new Vector2Int(k, BaseSize) };
+                foreach (var c in ring)
+                    if (HasCell(c) && !IsBase(c)) return c;
+            }
+            return o;
         }
 
         float Fbm(float x, float y)
@@ -207,23 +261,53 @@ namespace DungeonConveyor
 
         static readonly Vector2Int[] Neighbours = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
 
-        void PlaceBase()
+        /// <summary>
+        /// The main base near the middle of the map; any further bases out toward the edges, well apart from each
+        /// other, with room around them.
+        /// </summary>
+        void PlaceBases()
         {
+            BaseOrigins.Clear();
             var mapCenter = new Vector2(Width, Height) * 0.5f;
+            float half = Mathf.Min(Width, Height) * 0.5f;
+            var main = Vector2Int.FloorToInt(mapCenter) - Vector2Int.one * (BaseSize / 2);
+            var near = new Vector2(Mathf.Min(BaseDistance.x, half * 0.15f), Mathf.Min(BaseDistance.y, half * 0.3f));
             for (int tries = 0; tries < 2000; tries++)
             {
-                BaseOrigin = new Vector2Int(Random.Range(0, Width - BaseSize + 1), Random.Range(0, Height - BaseSize + 1));
-                float d = Vector2.Distance(BaseCenter, mapCenter);
-                if (d >= BaseDistance.x && d <= BaseDistance.y && BaseFootprintExists()) return;
+                var o = new Vector2Int(Random.Range(0, Width - BaseSize + 1), Random.Range(0, Height - BaseSize + 1));
+                float d = Vector2.Distance(CenterOf(o), mapCenter);
+                if (d >= near.x && d <= near.y && BaseFits(o)) { main = o; break; }
             }
-            BaseOrigin = Vector2Int.FloorToInt(mapCenter) - Vector2Int.one * (BaseSize / 2);
+            BaseOrigins.Add(main);
+
+            for (int i = 1; i < CoreCount; i++)
+            {
+                float apart = half * 0.8f;
+                for (int pass = 0; pass < 4 && BaseOrigins.Count <= i; pass++, apart *= 0.8f)
+                    for (int tries = 0; tries < 1000; tries++)
+                    {
+                        var o = new Vector2Int(Random.Range(2, Width - BaseSize - 1), Random.Range(2, Height - BaseSize - 1));
+                        float d = Vector2.Distance(CenterOf(o), mapCenter);
+                        if (d < half * 0.35f || d > half * 0.7f || !BaseFits(o)) continue;
+                        bool far = true;
+                        foreach (var other in BaseOrigins)
+                            if (Vector2.Distance(CenterOf(o), CenterOf(other)) < apart) far = false;
+                        if (!far) continue;
+                        BaseOrigins.Add(o);
+                        break;
+                    }
+            }
+            if (BaseOrigins.Count < CoreCount) Debug.LogWarning($"IsoGrid: room for only {BaseOrigins.Count} of {CoreCount} Cores.");
         }
 
-        bool BaseFootprintExists()
+        static Vector2 CenterOf(Vector2Int origin) => (Vector2)origin + Vector2.one * (BaseSize * 0.5f);
+
+        /// <summary>The footprint plus a one-cell border all exists.</summary>
+        bool BaseFits(Vector2Int origin)
         {
-            for (int x = 0; x < BaseSize; x++)
-                for (int y = 0; y < BaseSize; y++)
-                    if (!HasCell(BaseOrigin + new Vector2Int(x, y))) return false;
+            for (int x = -1; x <= BaseSize; x++)
+                for (int y = -1; y <= BaseSize; y++)
+                    if (!HasCell(origin + new Vector2Int(x, y))) return false;
             return true;
         }
 
@@ -294,7 +378,7 @@ namespace DungeonConveyor
             // The base area always survives.
             for (int x = 0; x < Width; x++)
                 for (int y = 0; y < Height; y++)
-                    if (Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), center) < ShapeSolidCenter) keep[x, y] = true;
+                    if (Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), center) < Mathf.Min(ShapeSolidCenter, halfSize * 0.45f)) keep[x, y] = true;
 
             return KeepConnected(keep, Vector2Int.FloorToInt(center));
         }
@@ -389,14 +473,17 @@ namespace DungeonConveyor
         {
             Patches.Clear();
             PatchAt = new OrePatch[Width, Height];
-            int target = Random.Range(OrePatches.x, OrePatches.y + 1);
+            // OrePatches is for a 50x50 map; scale it with the area, at least 3.
+            float area = Width * Height / 2500f;
+            int target = Mathf.Max(3, Mathf.RoundToInt(Random.Range(OrePatches.x, OrePatches.y + 1) * area));
+            float minDistance = Mathf.Min(OreMinBaseDistance, Mathf.Min(Width, Height) * 0.2f);
             for (int placed = 0, tries = 0; placed < target && tries < 4000; tries++)
             {
                 int size = Random.Range(1, 4);
                 var o = new Vector2Int(Random.Range(0, Width - size + 1), Random.Range(0, Height - size + 1));
                 var center = (Vector2)o + Vector2.one * (size * 0.5f);
-                float distance = Vector2.Distance(center, BaseCenter);
-                if (distance < OreMinBaseDistance || (placed == 0 && (distance > OreMinBaseDistance + 6f || size < 2))) continue;
+                float distance = DistanceToBase(center);
+                if (distance < minDistance || (placed == 0 && (distance > minDistance + 6f || size < 2))) continue;
                 if (!OreFits(o, size) || NearSpawn(center, 4f)) continue;
 
                 var patch = new OrePatch { Kind = placed == 0 ? 0 : PickOre(distance) };
@@ -459,9 +546,9 @@ namespace DungeonConveyor
         /// base, and grades it into a ramp working outward. Only cells outside that area change, so routes made
         /// for earlier spawns stay intact.
         /// </summary>
-        void EnsurePathToBase(Vector2Int start)
+        void EnsurePathToBase(Vector2Int start, int onlyBase = -1)
         {
-            var reachable = ReachableFromBase();
+            var reachable = ReachableFromBase(onlyBase);
             if (!HasCell(start) || reachable[start.x, start.y]) return;
 
             var cost = new int[Width, Height];
@@ -523,35 +610,38 @@ namespace DungeonConveyor
                 Heights[c.x, c.y] = Mathf.Clamp(Heights[c.x, c.y], ph - MaxClimb, ph + MaxClimb);
             }
 
-            if (!CanReachBase(start)) Debug.LogError($"IsoGrid: failed to connect spawn {start} to the base.");
+            if (!CanReachBase(start, onlyBase)) Debug.LogError($"IsoGrid: failed to connect {start} to the base.");
         }
 
-        public bool CanReachBase(Vector2Int start) => HasCell(start) && ReachableFromBase()[start.x, start.y];
+        public bool CanReachBase(Vector2Int start, int onlyBase = -1) => HasCell(start) && ReachableFromBase(onlyBase)[start.x, start.y];
 
-        /// <summary>Flood fill from the base using the enemy movement rule (steps are symmetric).</summary>
-        public bool[,] ReachableFromBase()
+        /// <summary>Flood fill from every base (or just base onlyBase) using the enemy movement rule (steps are symmetric).</summary>
+        public bool[,] ReachableFromBase(int onlyBase = -1)
         {
             var seen = new bool[Width, Height];
             var queue = new Queue<Vector2Int>();
-            for (int x = 0; x < BaseSize; x++)
-                for (int y = 0; y < BaseSize; y++)
-                {
-                    var b = BaseOrigin + new Vector2Int(x, y);
-                    if (!HasCell(b)) continue;
-                    seen[b.x, b.y] = true;
-                    queue.Enqueue(b);
-                }
+            for (int i = 0; i < BaseOrigins.Count; i++)
+            {
+                if (onlyBase >= 0 && i != onlyBase) continue;
+                for (int x = 0; x < BaseSize; x++)
+                    for (int y = 0; y < BaseSize; y++)
+                    {
+                        var b = BaseOrigins[i] + new Vector2Int(x, y);
+                        if (!HasCell(b)) continue;
+                        seen[b.x, b.y] = true;
+                        queue.Enqueue(b);
+                    }
+            }
             while (queue.Count > 0)
             {
                 var c = queue.Dequeue();
                 foreach (var d in Neighbours)
                 {
                     var n = c + d;
-                    if (InBounds(n) && !seen[n.x, n.y] && CanStep(c, n))
-                    {
-                        seen[n.x, n.y] = true;
-                        queue.Enqueue(n);
-                    }
+                    if (!InBounds(n) || seen[n.x, n.y] || !CanStep(c, n)) continue;
+                    if (onlyBase >= 0 && IsBase(n) && !InBase(n, onlyBase)) continue; // can't walk through another Core
+                    seen[n.x, n.y] = true;
+                    queue.Enqueue(n);
                 }
             }
             return seen;

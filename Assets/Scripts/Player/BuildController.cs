@@ -13,7 +13,7 @@ namespace DungeonConveyor
     ///   of existing belts, take output from an adjacent miner and feed an adjacent Core.
     /// - Right-click a building to delete it (refunded); hold right-click and sweep to clear belts and walls.
     ///   A right-click that removes nothing, or Esc, stops placing.
-    /// Rules: miners go on ore, shooting towers next to a conveyor, and nothing may cut the enemies' path to the Core.
+    /// Rules: miners go on ore, shooting towers near a conveyor (ConveyorReach), and nothing may cut the enemies' path to the Core.
     /// </summary>
     [RequireComponent(typeof(IsoGrid))]
     public class BuildController : MonoBehaviour
@@ -21,6 +21,8 @@ namespace DungeonConveyor
         public int StartingGold = 1500;
         [Tooltip("Largest height difference allowed under a building's footprint, and between neighbouring belt tiles.")]
         public int MaxFootprintSlope = 1;
+        [Tooltip("Shooting towers must have a conveyor within this many tiles of their footprint (diagonals count as 1).")]
+        public int ConveyorReach = 3;
         [Range(0f, 1f)] public float RefundFraction = 1f;
         [Tooltip("Belt animation speed in frames per second.")]
         public float BeltFps = 10f;
@@ -66,6 +68,9 @@ namespace DungeonConveyor
         /// <summary>Income: ore sold at the Core, enemy bounties, early-wave bonuses.</summary>
         public void Earn(int gold) => Gold += gold;
 
+        /// <summary>Placed buildings show their 3D model rather than a sprite (BuildingCatalog.LiveModels).</summary>
+        bool LiveModels => Catalog != null && Catalog.LiveModels;
+
         static bool IsConveyor(BuildingCatalog.Entry e) => e.Id == BuildingCatalog.ConveyorId;
         static bool IsWall(BuildingCatalog.Entry e) => e.Id == BuildingCatalog.WallId;
         /// <summary>Belts and walls are drawn by dragging a line of tiles.</summary>
@@ -84,6 +89,7 @@ namespace DungeonConveyor
             if (Catalog == null)
                 Debug.LogWarning("BuildController: Resources/BuildingCatalog.asset not found (Dungeon > Sync Building Catalog).");
             GameArt.EnsureRendered(transform);
+            if (LiveModels) BuildingModels.MatchBakeLighting();
             decor = GetComponent<WorldDecor>();
             pathCheck = new FlowField(map);
 
@@ -214,7 +220,7 @@ namespace DungeonConveyor
         public bool CanPlace(BuildingCatalog.Entry e, Vector2Int origin, out int level, out string reason)
         {
             int lo = int.MaxValue, hi = int.MinValue;
-            bool ore = false, besideBelt = false;
+            bool ore = false;
             level = 0;
             foreach (var c in Footprint(origin, e.Size))
             {
@@ -222,14 +228,12 @@ namespace DungeonConveyor
                 ore |= map.IsOre(c);
                 lo = Mathf.Min(lo, map.Heights[c.x, c.y]);
                 hi = Mathf.Max(hi, map.Heights[c.x, c.y]);
-                foreach (var d in Dir.Offsets)
-                    if (map.BuildingAt(c + d) is Conveyor) besideBelt = true;
             }
             level = hi;
             if (e.NeedsOre && !ore) { reason = "Must be placed on ore"; return false; }
             if (!e.NeedsOre && ore) { reason = "Ore is reserved for mining"; return false; }
             if (hi - lo > MaxFootprintSlope) { reason = "Ground too uneven"; return false; }
-            if (e.NeedsConveyor && !besideBelt) { reason = "Must be placed next to a conveyor"; return false; }
+            if (e.NeedsConveyor && !ConveyorNear(origin, e.Size)) { reason = $"Must be within {ConveyorReach} tiles of a conveyor"; return false; }
             if (e.BlocksEnemies)
             {
                 foreach (var enemy in Enemy.All)
@@ -238,6 +242,15 @@ namespace DungeonConveyor
             }
             reason = null;
             return true;
+        }
+
+        /// <summary>Is there a conveyor within ConveyorReach tiles of this footprint?</summary>
+        bool ConveyorNear(Vector2Int origin, Vector2Int size)
+        {
+            for (int x = -ConveyorReach; x < size.x + ConveyorReach; x++)
+                for (int y = -ConveyorReach; y < size.y + ConveyorReach; y++)
+                    if (map.BuildingAt(origin + new Vector2Int(x, y)) is Conveyor) return true;
+            return false;
         }
 
         static bool IsInside(Vector2Int c, Vector2Int origin, Vector2Int size) =>
@@ -292,7 +305,8 @@ namespace DungeonConveyor
                 e.Id == BuildingCatalog.WallId ? go.AddComponent<Wall>() :
                 go.AddComponent<Building>();
             building.Init(e, origin, level, sr);
-            if (building is Tower tower) tower.SetupHead();
+            if (LiveModels && !(building is Wall)) building.ShowModel(map);
+            if (building is Tower tower) tower.SetupHead(Catalog.AimingHeads);
             if (building is Wall)
             {
                 sr.sprite = null; // drawn by its snapped pieces instead
@@ -416,7 +430,7 @@ namespace DungeonConveyor
             for (int x = -1; x <= size.x; x++)
                 for (int y = -1; y <= size.y; y++)
                     if (map.BuildingAt(origin + new Vector2Int(x, y)) is Wall w)
-                        w.Shape(map, c => map.BuildingAt(c) is Wall, spriteMaterial);
+                        w.Shape(map, c => map.BuildingAt(c) is Wall, spriteMaterial, LiveModels);
         }
 
         /// <summary>Builds a wall line along a path, as if drawn by hand (for scripts); returns walls built.</summary>

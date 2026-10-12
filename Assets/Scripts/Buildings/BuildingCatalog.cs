@@ -73,6 +73,11 @@ namespace DungeonConveyor
         public const string SplitterId = "Splitter";
         public const string RefinerId = "Collector"; // the Refiner reuses the Collector model
 
+        [Tooltip("Placed buildings are live 3D models (BuildingModels) instead of pre-rendered sprites: turret heads " +
+                 "turn smoothly and models stay sharp at any zoom. Off = sprites, as before. The build menu icons and " +
+                 "placement ghost are sprites either way. DitherLook only affects the sprites.")]
+        public bool LiveModels = true;
+
         [Tooltip("Temporary (art check): towers whose model has a \"Head\" node turn their head toward their target, " +
                  "drawn as a body sprite plus one head sprite per direction (GameArt.RenderHead, Tower.Aim). Off = the " +
                  "single static sprite, exactly as before.")]

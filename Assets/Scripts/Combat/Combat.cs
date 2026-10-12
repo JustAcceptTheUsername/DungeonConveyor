@@ -80,7 +80,7 @@ namespace DungeonConveyor
             var def = t.Def;
             var center = t.GridCenter;
             t.Cooldown -= dt;
-            if (t.Head != null)
+            if (t.CanAim)
             {
                 // Track the enemy it would shoot next, between shots too.
                 var aim = PickTarget(center, def.Range, def.Attack == AttackKind.Mortar ? MortarMinRange : 0f, t.Target);
