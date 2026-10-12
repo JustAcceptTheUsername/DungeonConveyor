@@ -44,7 +44,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Wall
     Name: Wall
-    Model: {fileID: -5529287013646982847, guid: e3e2e0e238cf54a48a4400f23b2ba710, type: 3}
+    Model: {fileID: 6780845749958460538, guid: e3e2e0e238cf54a48a4400f23b2ba710, type: 3}
     Category: 0
     Cost: 25
     Size: {x: 1, y: 1}
@@ -58,7 +58,7 @@ MonoBehaviour:
     Splash: 0
   - Id: LandMine
     Name: Land Mine
-    Model: {fileID: -3485466826927445148, guid: 78bb3b1ca7e68db4c89da2cc64136172, type: 3}
+    Model: {fileID: -6493052282944581010, guid: 78bb3b1ca7e68db4c89da2cc64136172, type: 3}
     Category: 0
     Cost: 40
     Size: {x: 1, y: 1}
@@ -201,7 +201,7 @@ MonoBehaviour:
     Splash: 1.2
   - Id: TeslaCoil
     Name: Tesla Coil
-    Model: {fileID: -8382162346071086327, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+    Model: {fileID: 8909428289235959629, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
     Category: 0
     Cost: 400
     Size: {x: 1, y: 1}
@@ -215,7 +215,7 @@ MonoBehaviour:
     Splash: 4
   - Id: ShieldGenerator
     Name: Shield Generator
-    Model: {fileID: -5982242663529193206, guid: 05869a60df8a2574a90a7319ecae8544, type: 3}
+    Model: {fileID: -6411412176600960630, guid: 05869a60df8a2574a90a7319ecae8544, type: 3}
     Category: 0
     Cost: 450
     Size: {x: 2, y: 2}
