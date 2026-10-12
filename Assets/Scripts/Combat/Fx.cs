@@ -91,6 +91,18 @@ namespace DungeonConveyor
 
         public static void Flash(Vector3 pos, Color color, float size = 0.35f) => Spawn(pos, color, size, size * 0.4f, 0.08f);
 
+        /// <summary>Quick jagged spark trail between two points (lightning arcs).</summary>
+        public static void Bolt(Vector3 from, Vector3 to, Color color)
+        {
+            const int steps = 6;
+            for (int i = 0; i <= steps; i++)
+            {
+                var p = Vector3.Lerp(from, to, i / (float)steps);
+                if (i > 0 && i < steps) p += (Vector3)Random.insideUnitCircle * 0.08f;
+                Spawn(p, color, 0.12f, 0.04f, 0.14f);
+            }
+        }
+
         public static void Tick(float dt)
         {
             for (int i = effects.Count - 1; i >= 0; i--)

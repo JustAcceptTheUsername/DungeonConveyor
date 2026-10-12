@@ -131,10 +131,14 @@ namespace DungeonConveyor
         public bool Destroyed => Health <= 0f;
         public event System.Action OnDestroyed;
 
-        public void TakeDamage(float amount)
+        /// <summary>Raised on every hit: the damage dealt and whether a boss dealt it.</summary>
+        public event System.Action<float, bool> Damaged;
+
+        public void TakeDamage(float amount, bool fromBoss = false)
         {
             if (Destroyed) return;
             Health = Mathf.Max(0f, Health - amount);
+            Damaged?.Invoke(amount, fromBoss);
             if (Destroyed) OnDestroyed?.Invoke();
         }
     }
