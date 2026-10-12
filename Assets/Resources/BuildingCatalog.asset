@@ -101,7 +101,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Turret
     Name: Turret
-    Model: {fileID: 2316202870914594075, guid: 2a0542c23cb8c4e40bfbef70382f834c, type: 3}
+    Model: {fileID: 1591986052438885169, guid: 2a0542c23cb8c4e40bfbef70382f834c, type: 3}
     Category: 0
     Cost: 150
     Size: {x: 1, y: 1}
