@@ -305,9 +305,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b0e7f0c4d4352d340ba1af199e0ab85b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.IsoGrid
-  Width: 50
-  Height: 50
+  Width: 30
+  Height: 30
   Ground: {fileID: 1573557423}
+  RoguelikeRun: 1
+  CoreCount: 1
   BaseDistance: {x: 3, y: 8}
   SpawnMinDistance: 20
   SpawnCount: {x: 1, y: 4}
