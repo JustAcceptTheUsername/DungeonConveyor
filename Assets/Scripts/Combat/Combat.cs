@@ -8,6 +8,8 @@ namespace DungeonConveyor
     /// and attacks it with bullets, homing missiles, lobbed mortar shells, a laser beam, chain lightning, a flame
     /// field, a slow field or a mine blast. Flame and slow towers show their damage field on the ground; any tower's
     /// range shows while hovering it or placing one.
+    /// Run upgrades scale each tower's damage, attack speed and range, and add elemental damage to its hits: fire
+    /// burns, lightning arcs to a second enemy, frost chills (slows), poison stacks (see ElementalHit).
     /// </summary>
     [RequireComponent(typeof(IsoGrid), typeof(BuildController), typeof(WaveManager))]
     public class Combat : MonoBehaviour
@@ -20,6 +22,20 @@ namespace DungeonConveyor
         [Tooltip("Max jump between Tesla chain links (cells).")]
         public float TeslaJump = 2.2f;
 
+        [Header("Elements (per point of element damage)")]
+        [Tooltip("Burn damage per second, for BurnSeconds.")]
+        public float BurnDpsPerPoint = 0.5f;
+        public float BurnSeconds = 3f;
+        [Tooltip("Lightning arcs to the nearest other enemy within this many cells.")]
+        public float ArcJump = 2f;
+        public float ChillBase = 0.15f, ChillPerPoint = 0.02f, ChillMax = 0.5f, ChillSeconds = 1.5f;
+        [Tooltip("Poison damage per second per stack.")]
+        public float PoisonDpsPerPoint = 0.4f;
+        public int PoisonMaxStacks = 8;
+        public float PoisonSeconds = 4f;
+        [Tooltip("Continuous attacks (laser, flame) apply elements as if hitting this many times per second.")]
+        public float ContinuousHitsPerSecond = 2f;
+
         public float DamageDealt { get; private set; }
 
         class Shot
@@ -31,6 +47,7 @@ namespace DungeonConveyor
             public Enemy Target;
             public float Damage, Splash, Age, Life;
             public Color Color;
+            public float[] Elements;
         }
 
         IsoGrid map;
@@ -60,6 +77,13 @@ namespace DungeonConveyor
         {
             float dt = Time.deltaTime;
             foreach (var e in Enemy.All) e.SlowFactor = 1f;
+            for (int i = Enemy.All.Count - 1; i >= 0; i--)
+            {
+                var e = Enemy.All[i];
+                float dot = e.TickEffects(dt);
+                if (dot > 0f) Hit(e, dot);
+            }
+            CleanupDead();
 
             // Iterate over a copy: mines remove themselves when they go off.
             var towers = new List<Tower>();
@@ -79,11 +103,16 @@ namespace DungeonConveyor
         {
             var def = t.Def;
             var center = t.GridCenter;
+            var mods = DungeonConveyor.Run.For(def.Id);
+            float range = RangeOf(def);
+            float damage = def.Damage * (1f + mods.Damage);
+            float rate = 1f + mods.FireRate;
+            var elements = mods.Elements;
             t.Cooldown -= dt;
             if (t.CanAim)
             {
                 // Track the enemy it would shoot next, between shots too.
-                var aim = PickTarget(center, def.Range, def.Attack == AttackKind.Mortar ? MortarMinRange : 0f, t.Target);
+                var aim = PickTarget(center, range, def.Attack == AttackKind.Mortar ? MortarMinRange : 0f, t.Target);
                 if (aim != null) t.Aim(aim.GridPos - center);
             }
             if (t.BeamTimer > 0f)
@@ -96,22 +125,23 @@ namespace DungeonConveyor
             {
                 case AttackKind.Slow:
                     foreach (var e in Enemy.All)
-                        if (InRange(e, center, def.Range)) e.SlowFactor = Mathf.Min(e.SlowFactor, 1f - Mathf.Clamp01(def.Damage));
+                        if (InRange(e, center, range)) e.SlowFactor = Mathf.Min(e.SlowFactor, 1f - Mathf.Clamp01(def.Damage));
                     return;
 
                 case AttackKind.Flame:
                 {
                     bool any = false;
                     foreach (var e in Enemy.All)
-                        if (InRange(e, center, def.Range))
+                        if (InRange(e, center, range))
                         {
                             any = true;
-                            Hit(e, def.Damage * dt);
+                            Hit(e, damage * rate * dt);
+                            ElementalHit(e, elements, dt * ContinuousHitsPerSecond);
                             if (Random.value < dt * 6f) Fx.Spawn(e.AimPoint, new Color(1f, 0.5f, 0.1f, 0.8f), 0.25f, 0.6f, 0.35f, Vector3.up * 0.5f);
                         }
                     if (any && Random.value < dt * 12f)
                     {
-                        var dir = Random.insideUnitCircle * def.Range;
+                        var dir = Random.insideUnitCircle * range;
                         Fx.Spawn(Muzzle(t), new Color(1f, 0.55f, 0.15f, 0.7f), 0.2f, 0.7f, 0.45f, map.GridToWorld(center + dir) - map.GridToWorld(center));
                     }
                     CleanupDead();
@@ -122,7 +152,7 @@ namespace DungeonConveyor
                     foreach (var e in Enemy.All)
                     {
                         if (e.Def.Hover > 0f || !InRange(e, center, def.Range)) continue;
-                        Splash(center, def.Splash, def.Damage, true);
+                        Splash(center, def.Splash, damage, true, elements);
                         Fx.Explosion(map.GridToWorld(center, t.Level), def.Splash, new Color(1f, 0.6f, 0.2f, 0.9f));
                         build.RemoveBuilding(t, refund: false);
                         return;
@@ -131,7 +161,7 @@ namespace DungeonConveyor
 
                 case AttackKind.Laser:
                 {
-                    t.Target = PickTarget(center, def.Range, 0f, t.Target);
+                    t.Target = PickTarget(center, range, 0f, t.Target);
                     if (t.Beam == null) t.Beam = Fx.NewLine("Laser", t.transform, new Color(1f, 0.25f, 0.3f, 0.9f), 0.06f);
                     if (t.Target == null) { t.Beam.enabled = false; return; }
                     t.Beam.loop = false;
@@ -140,7 +170,8 @@ namespace DungeonConveyor
                     t.Beam.SetPosition(1, t.Target.AimPoint);
                     t.Beam.enabled = true;
                     if (Random.value < dt * 15f) Fx.Flash(t.Target.AimPoint, new Color(1f, 0.4f, 0.4f, 0.8f), 0.3f);
-                    Hit(t.Target, def.Damage * dt);
+                    Hit(t.Target, damage * rate * dt);
+                    ElementalHit(t.Target, elements, dt * ContinuousHitsPerSecond);
                     CleanupDead();
                     return;
                 }
@@ -149,32 +180,33 @@ namespace DungeonConveyor
             // Discrete attacks.
             if (t.Cooldown > 0f) return;
             float minRange = def.Attack == AttackKind.Mortar ? MortarMinRange : 0f;
-            t.Target = PickTarget(center, def.Range, minRange, null);
+            t.Target = PickTarget(center, range, minRange, null);
             if (t.Target == null) return;
-            t.Cooldown = 1f / Mathf.Max(0.05f, def.FireRate);
+            t.Cooldown = 1f / Mathf.Max(0.05f, def.FireRate * rate);
             var muzzle = Muzzle(t);
 
             switch (def.Attack)
             {
                 case AttackKind.Bullet:
                     Fx.Flash(muzzle, new Color(1f, 0.8f, 0.3f));
-                    Fire(AttackKind.Bullet, muzzle, t.Target, def.Damage, 0f, new Color(1f, 0.85f, 0.4f), 0.14f);
+                    Fire(AttackKind.Bullet, muzzle, t.Target, damage, 0f, new Color(1f, 0.85f, 0.4f), 0.14f).Elements = elements;
                     break;
                 case AttackKind.Missile:
                     Fx.Flash(muzzle, new Color(1f, 0.6f, 0.2f));
-                    Fire(AttackKind.Missile, muzzle, t.Target, def.Damage, def.Splash, new Color(1f, 0.5f, 0.2f), 0.22f);
+                    Fire(AttackKind.Missile, muzzle, t.Target, damage, def.Splash, new Color(1f, 0.5f, 0.2f), 0.22f).Elements = elements;
                     break;
                 case AttackKind.Mortar:
                 {
                     Fx.Flash(muzzle, new Color(1f, 0.7f, 0.3f), 0.5f);
-                    var shot = Fire(AttackKind.Mortar, muzzle, null, def.Damage, def.Splash, new Color(1f, 0.75f, 0.35f), 0.24f);
+                    var shot = Fire(AttackKind.Mortar, muzzle, null, damage, def.Splash, new Color(1f, 0.75f, 0.35f), 0.24f);
+                    shot.Elements = elements;
                     shot.GridEnd = t.Target.GridPos;
                     shot.End = t.Target.transform.position;
                     shot.Life = MortarFlightTime;
                     break;
                 }
                 case AttackKind.Tesla:
-                    Chain(t, muzzle);
+                    Chain(t, muzzle, damage, elements);
                     break;
             }
         }
@@ -197,7 +229,11 @@ namespace DungeonConveyor
             return best;
         }
 
-        void Chain(Tower t, Vector3 muzzle)
+        /// <summary>Range with the run's upgrades.</summary>
+        public static float RangeOf(BuildingCatalog.Entry def) =>
+            def.Range + (def.Attack == AttackKind.Mine ? 0f : DungeonConveyor.Run.For(def.Id).Range);
+
+        void Chain(Tower t, Vector3 muzzle, float damage, float[] elements)
         {
             var def = t.Def;
             var hits = new List<Enemy> { t.Target };
@@ -229,7 +265,8 @@ namespace DungeonConveyor
                 points.Add(end);
                 prev = end;
                 Fx.Flash(end, new Color(0.6f, 0.9f, 1f, 0.9f), 0.35f);
-                Hit(e, def.Damage);
+                Hit(e, damage);
+                ElementalHit(e, elements, 1f);
             }
             t.Beam.loop = false;
             t.Beam.positionCount = points.Count;
@@ -276,7 +313,7 @@ namespace DungeonConveyor
                     done = t >= 1f;
                     if (done)
                     {
-                        Splash(s.GridEnd, s.Splash, s.Damage, true);
+                        Splash(s.GridEnd, s.Splash, s.Damage, true, s.Elements);
                         Fx.Explosion(s.End, s.Splash, new Color(1f, 0.55f, 0.2f, 0.85f));
                     }
                 }
@@ -298,12 +335,13 @@ namespace DungeonConveyor
                     {
                         if (s.Kind == AttackKind.Missile)
                         {
-                            Splash(s.GridEnd, s.Splash, s.Damage, false);
+                            Splash(s.GridEnd, s.Splash, s.Damage, false, s.Elements);
                             Fx.Explosion(s.End, Mathf.Max(0.6f, s.Splash), new Color(1f, 0.5f, 0.2f, 0.85f));
                         }
                         else if (s.Target != null && s.Target.Alive)
                         {
                             Hit(s.Target, s.Damage);
+                            ElementalHit(s.Target, s.Elements, 1f);
                             Fx.Flash(s.End, new Color(1f, 0.9f, 0.5f), 0.2f);
                         }
                     }
@@ -317,14 +355,51 @@ namespace DungeonConveyor
             CleanupDead();
         }
 
-        void Splash(Vector2 center, float radius, float damage, bool groundOnly)
+        void Splash(Vector2 center, float radius, float damage, bool groundOnly, float[] elements = null)
         {
             foreach (var e in Enemy.All)
             {
                 if (groundOnly && e.Def.Hover > 0f) continue;
-                if ((e.GridPos - center).sqrMagnitude <= radius * radius) Hit(e, damage);
+                if ((e.GridPos - center).sqrMagnitude > radius * radius) continue;
+                Hit(e, damage);
+                ElementalHit(e, elements, 1f);
             }
             CleanupDead();
+        }
+
+        /// <summary>
+        /// The run's elemental bonus on one hit: each element's points as extra damage, plus its effect. weight is 1 for
+        /// a single hit; continuous attacks pass a per-frame fraction, which scales the damage and the chance of an arc
+        /// or a poison stack.
+        /// </summary>
+        void ElementalHit(Enemy e, float[] elements, float weight)
+        {
+            if (elements == null || e == null || !e.Alive) return;
+            float fire = elements[(int)Element.Fire], bolt = elements[(int)Element.Lightning];
+            float frost = elements[(int)Element.Frost], poison = elements[(int)Element.Poison];
+            float extra = (fire + bolt + frost + poison) * weight;
+            if (extra <= 0f) return;
+            Hit(e, extra);
+            if (fire > 0f) e.Ignite(fire * BurnDpsPerPoint, BurnSeconds);
+            if (frost > 0f) e.Chill(Mathf.Min(ChillMax, ChillBase + ChillPerPoint * frost), ChillSeconds);
+            if (poison > 0f && Random.value < weight) e.Poison(poison * PoisonDpsPerPoint, PoisonMaxStacks, PoisonSeconds);
+            if (bolt > 0f && Random.value < weight) Arc(e, bolt);
+        }
+
+        /// <summary>Lightning jumps from one enemy to the nearest other one in reach.</summary>
+        void Arc(Enemy from, float damage)
+        {
+            Enemy next = null;
+            float best = ArcJump * ArcJump;
+            foreach (var o in Enemy.All)
+            {
+                if (o == from || !o.Alive) continue;
+                float d = (o.GridPos - from.GridPos).sqrMagnitude;
+                if (d <= best) { best = d; next = o; }
+            }
+            if (next == null) return;
+            Fx.Bolt(from.AimPoint, next.AimPoint, DungeonConveyor.Run.ElementColors[(int)Element.Lightning]);
+            Hit(next, damage);
         }
 
         void Hit(Enemy e, float damage)
@@ -358,7 +433,7 @@ namespace DungeonConveyor
                 if (fields.ContainsKey(t)) continue;
                 var color = t.Def.Attack == AttackKind.Flame ? FlameField : SlowField;
                 var lr = Fx.NewLine("Field", root, color, 0.05f, map.SortOrder(t.Origin) + 2);
-                Fx.Ring(lr, map, t.GridCenter, t.Def.Range, t.Level);
+                Fx.Ring(lr, map, t.GridCenter, RangeOf(t.Def), t.Level);
                 fields[t] = lr;
             }
             var gone = new List<Tower>();
@@ -387,11 +462,11 @@ namespace DungeonConveyor
             {
                 var o = build.GhostOrigin.Value;
                 var center = (Vector2)o + (Vector2)(placing.Size - Vector2Int.one) * 0.5f;
-                Fx.Ring(rangePreview, map, center, placing.Range, map.HeightAt(o));
+                Fx.Ring(rangePreview, map, center, RangeOf(placing), map.HeightAt(o));
                 return;
             }
             if (hover != null && hover.HasCell && map.BuildingAt(hover.Cell) is Tower t && t.Def.Range > 0f)
-                Fx.Ring(rangePreview, map, t.GridCenter, t.Def.Range, t.Level);
+                Fx.Ring(rangePreview, map, t.GridCenter, RangeOf(t.Def), t.Level);
         }
     }
 }

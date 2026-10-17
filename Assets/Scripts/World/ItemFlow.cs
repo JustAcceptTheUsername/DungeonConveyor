@@ -223,9 +223,9 @@ namespace DungeonConveyor
             if (target == null) return Wait(item);
             if (target.IsCore)
             {
-                int value = ValueOf(item);
+                int value = Mathf.RoundToInt(ValueOf(item) * Run.IncomeMultiplier);
                 Destroy(item.Renderer.gameObject);
-                build.Earn(value);
+                build.Earn(value, build.Core.transform.position);
                 Delivered++;
                 if (item.Refined) DeliveredRefined++;
                 GoldFromOre += value;

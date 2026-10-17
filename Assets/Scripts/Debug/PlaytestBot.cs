@@ -108,7 +108,8 @@ namespace DungeonConveyor
             Line("");
             Line($"=== Game {gamesPlayed + 1}/{games}{(defenceless ? "  (no defences: Core should fall)" : "")} ===");
             DescribeMap();
-            Time.timeScale = speed;
+            GameSpeed.Speed = speed;
+            waves.AutoPickCards = true;
 
             WallTests();
             WallLineTest();
@@ -160,7 +161,8 @@ namespace DungeonConveyor
                 Line($"  outcome: {(build.Core.Destroyed ? $"Core destroyed in wave {waves.Wave}" : $"survived to wave {waves.Wave} with Core at {build.Core.Health:0}/{build.Core.MaxHealth:0}")}");
 
             gamesPlayed++;
-            Time.timeScale = 1f;
+            GameSpeed.Speed = 1f;
+            Run.Reset();
             if (gamesPlayed < games) SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
             else Finish();
         }

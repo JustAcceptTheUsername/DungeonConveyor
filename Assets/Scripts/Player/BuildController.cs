@@ -65,8 +65,18 @@ namespace DungeonConveyor
 
         public bool CanAfford(BuildingCatalog.Entry e) => Gold >= e.Cost;
 
-        /// <summary>Income: ore sold at the Core, enemy bounties, early-wave bonuses.</summary>
-        public void Earn(int gold) => Gold += gold;
+        /// <summary>Raised whenever Gold changes: the delta (+ earned, - spent) and the world position it came from, if any.</summary>
+        public event System.Action<int, Vector3?> GoldChanged;
+
+        /// <summary>Income: ore sold at the Core, enemy bounties, early-wave bonuses. `from` is where it came from in the world.</summary>
+        public void Earn(int gold, Vector3? from = null) => ChangeGold(gold, from);
+
+        void ChangeGold(int delta, Vector3? from = null)
+        {
+            if (delta == 0) return;
+            Gold += delta;
+            GoldChanged?.Invoke(delta, from);
+        }
 
         /// <summary>Placed buildings show their 3D model rather than a sprite (BuildingCatalog.LiveModels).</summary>
         bool LiveModels => Catalog != null && Catalog.LiveModels;
@@ -83,7 +93,7 @@ namespace DungeonConveyor
             if (cam != null) camController = cam.GetComponent<CameraController>();
             var view = GetComponent<MapView>();
             if (view != null) spriteMaterial = view.SpriteMaterial;
-            Gold = StartingGold;
+            Gold = StartingGold + Run.CarriedGold; // later maps start with the gold left over from the last one
 
             Catalog = BuildingCatalog.Instance;
             if (Catalog == null)
@@ -290,7 +300,7 @@ namespace DungeonConveyor
 
         Building Place(BuildingCatalog.Entry e, Vector2Int origin, int level, bool free = false)
         {
-            if (!free) Gold -= e.Cost;
+            if (!free) ChangeGold(-e.Cost);
             var sr = NewSprite(e.Name, buildingsRoot);
             sr.sprite = e.Sprite;
             sr.transform.position = FootprintCenter(origin, e.Size, level);
@@ -634,10 +644,10 @@ namespace DungeonConveyor
             ResolveBeltSides(count, out var ins, out var outs, out var feeder, out var receiver, out var endInto);
 
             var placed = new List<Conveyor>();
+            ChangeGold(-Placing.Cost * count);
             for (int i = 0; i < count; i++)
             {
                 var c = beltPath[i];
-                Gold -= Placing.Cost;
                 var sr = NewSprite("Conveyor", buildingsRoot);
                 sr.transform.position = BeltPosition(c);
                 sr.sortingOrder = map.SortOrder(c) + 1;
@@ -722,7 +732,7 @@ namespace DungeonConveyor
             }
             buildings.Remove(b);
             if (b is Miner miner) miners.Remove(miner);
-            if (refund) Gold += Mathf.RoundToInt(b.Def.Cost * RefundFraction);
+            if (refund) ChangeGold(Mathf.RoundToInt(b.Def.Cost * RefundFraction));
             Destroy(b.gameObject); // takes any crystals riding a belt or held inside with it
             if (b is Conveyor belt)
             {

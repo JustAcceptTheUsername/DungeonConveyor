@@ -25,6 +25,15 @@ namespace DungeonConveyor
         public int StepsToCore { get; private set; } = FlowField.Unreachable;
         /// <summary>Speed multiplier for this frame (slow fields lower it).</summary>
         public float SlowFactor = 1f;
+        /// <summary>A boss: one big enemy that is a whole wave on its own.</summary>
+        public bool IsBoss { get; private set; }
+        public float CoreDamage { get; private set; }
+        public int Bounty { get; private set; }
+        float speedScale = 1f, size = 1f;
+
+        // Elemental effects (see Combat.ElementalHit).
+        float burnDps, burnTime, chill, chillTime, poisonPerStack, poisonTime;
+        int poisonStacks;
 
         IsoGrid map;
         SpriteRenderer body, barBack, barFill;
@@ -61,6 +70,8 @@ namespace DungeonConveyor
             Def = def;
             map = grid;
             MaxHealth = Health = def.Health * healthScale;
+            CoreDamage = def.CoreDamage;
+            Bounty = def.Bounty;
             bob = Random.Range(0f, 6.28f);
 
             body = NewSprite("Body", material);
@@ -81,6 +92,56 @@ namespace DungeonConveyor
             Place(Dir.Of(bridge.Landing - start));
         }
 
+        /// <summary>Turns this enemy into a boss: health, Core damage and bounty set, drawn bigger, walks slower.</summary>
+        public void MakeBoss(float health, float coreDamage, int bounty, float scale = 2f, float speed = 0.6f)
+        {
+            IsBoss = true;
+            MaxHealth = Health = health;
+            CoreDamage = coreDamage;
+            Bounty = bounty;
+            size = scale;
+            speedScale = speed;
+            body.transform.localScale = Vector3.one * size;
+        }
+
+        // ---------------------------------------------------------------- elemental effects
+
+        public void Ignite(float dps, float seconds)
+        {
+            burnDps = Mathf.Max(burnDps * (burnTime > 0f ? 1f : 0f), dps);
+            burnTime = Mathf.Max(burnTime, seconds);
+        }
+
+        public void Chill(float slow, float seconds)
+        {
+            chill = Mathf.Max(chill * (chillTime > 0f ? 1f : 0f), slow);
+            chillTime = Mathf.Max(chillTime, seconds);
+        }
+
+        public void Poison(float dpsPerStack, int maxStacks, float seconds)
+        {
+            poisonPerStack = Mathf.Max(poisonPerStack, dpsPerStack);
+            poisonStacks = Mathf.Min(maxStacks, poisonStacks + 1);
+            poisonTime = seconds;
+        }
+
+        /// <summary>Advances burn, chill and poison; applies the chill to SlowFactor. Returns damage over time dealt.</summary>
+        public float TickEffects(float dt)
+        {
+            float dot = 0f;
+            if (burnTime > 0f) { burnTime -= dt; dot += burnDps * dt; }
+            if (poisonTime > 0f) { poisonTime -= dt; dot += poisonPerStack * poisonStacks * dt; }
+            else poisonStacks = 0;
+            if (chillTime > 0f) { chillTime -= dt; SlowFactor = Mathf.Min(SlowFactor, 1f - chill); }
+
+            var tint = Color.white;
+            if (chillTime > 0f) tint = Color.Lerp(tint, new Color(0.55f, 0.85f, 1f), 0.6f);
+            if (poisonTime > 0f) tint = Color.Lerp(tint, new Color(0.6f, 1f, 0.35f), 0.5f);
+            if (burnTime > 0f) tint = Color.Lerp(tint, new Color(1f, 0.55f, 0.3f), 0.25f + 0.25f * Mathf.Abs(Mathf.Sin(Time.time * 12f)));
+            body.color = tint;
+            return dot;
+        }
+
         SpriteRenderer NewSprite(string name, Material material)
         {
             var sr = new GameObject(name).AddComponent<SpriteRenderer>();
@@ -92,7 +153,7 @@ namespace DungeonConveyor
         /// <summary>Moves toward the Core. Returns true when it has reached the Core this frame.</summary>
         public bool Step(float dt, FlowField flow)
         {
-            float move = Def.Speed * SlowFactor * dt;
+            float move = Def.Speed * speedScale * SlowFactor * dt;
             int facing = Dir.Of(Vector2Int.RoundToInt((to - from) * 2f));
             while (move > 0f)
             {
@@ -162,8 +223,8 @@ namespace DungeonConveyor
             bool show = Health < MaxHealth;
             barBack.enabled = barFill.enabled = show;
             if (!show) return;
-            const float width = 0.5f;
-            var top = body.sprite != null ? body.sprite.bounds.max.y : 0.5f;
+            float width = IsBoss ? 1.1f : 0.5f;
+            var top = (body.sprite != null ? body.sprite.bounds.max.y : 0.5f) * size;
             var pos = new Vector3(-width * 0.5f, top + 0.08f, 0f);
             barBack.transform.localPosition = pos;
             barBack.transform.localScale = new Vector3(width, 0.06f, 1f);
@@ -174,7 +235,7 @@ namespace DungeonConveyor
         }
 
         /// <summary>World point turrets aim at (middle of the body).</summary>
-        public Vector3 AimPoint => transform.position + Vector3.up * 0.2f;
+        public Vector3 AimPoint => transform.position + Vector3.up * 0.2f * size;
 
         /// <summary>Deals damage; returns true if this killed it.</summary>
         public bool TakeDamage(float amount)
