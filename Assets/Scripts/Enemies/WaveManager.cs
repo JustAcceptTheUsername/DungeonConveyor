@@ -7,8 +7,9 @@ namespace DungeonConveyor
     /// Enemy waves. After a build phase, each wave sends more and tougher enemies (new kinds unlock as waves go on),
     /// shared out between the spawn bridges; every Run.BossEvery-th wave is a lone boss instead. Moves every enemy along
     /// the flow field, which is rebuilt whenever buildings change; enemies that reach the Core damage it.
-    /// Each map has a set number of waves (Run.Current.Waves). Every wave whose enemies are all gone earns an upgrade
-    /// pick (CardsOwed); once the map's last wave is cleared and picked for, the map is cleared (StageCleared).
+    /// Each map has a set number of waves (Run.Current.Waves). Clearing every RunSettings.WavesPerCard-th wave (all its
+    /// enemies gone) earns an upgrade pick (CardsOwed); once the map's last wave is cleared and picked for, the map is
+    /// cleared (StageCleared).
     /// </summary>
     [RequireComponent(typeof(IsoGrid), typeof(BuildController))]
     public class WaveManager : MonoBehaviour
@@ -35,17 +36,33 @@ namespace DungeonConveyor
         public int LastWave => Run.LastWave;
         public bool AllWavesSent => Wave >= LastWave;
         public bool BossNext => Run.IsBossWave(Wave + 1) && !AllWavesSent;
-        /// <summary>Cleared waves still waiting for their upgrade pick.</summary>
-        public int CardsOwed => clearedUpTo - picked;
+        /// <summary>Card waves (every RunSettings.WavesPerCard-th) cleared but not yet picked for.</summary>
+        public int CardsOwed => owed.Count;
         /// <summary>The wave the current card pick is for.</summary>
-        public int PickingFor => picked + 1;
+        public int PickingFor => owed.Count > 0 ? owed.Peek() : clearedUpTo;
+        /// <summary>The next wave whose clearing earns a card.</summary>
+        public int NextCardWave
+        {
+            get
+            {
+                int every = Mathf.Max(1, RunSettings.Instance.WavesPerCard);
+                return (clearedUpTo / every + 1) * every;
+            }
+        }
         /// <summary>The three cards on offer while CardsOwed > 0.</summary>
         public List<Run.Card> Offer { get; private set; }
-        /// <summary>Kills, bounty gold and leaks of one wave (or, with overlapping waves, of everything cleared together).</summary>
+        /// <summary>
+        /// How many waves the current picks were earned by clearing together (sent before the field was clear). More
+        /// than one boosts every pick's rarity (Run.LuckFor).
+        /// </summary>
+        public int ClearedTogether { get; private set; } = 1;
+        /// <summary>Rarity luck of the current picks.</summary>
+        public float PickLuck => Run.LuckFor(ClearedTogether);
+        /// <summary>Kills, bounty gold and leaks of the waves since the last card.</summary>
         public struct WaveStats { public int Wave, Kills, Gold, Leaked; }
-        /// <summary>Stats of the wave the current card pick is for (snapshotted when the wave counted as cleared).</summary>
+        /// <summary>Stats of the waves the current card pick is for (snapshotted when its card wave was cleared).</summary>
         public WaveStats LastCleared => lastCleared;
-        /// <summary>Running stats since the last clear.</summary>
+        /// <summary>Running stats since the last card.</summary>
         public WaveStats Current => new WaveStats { Wave = Wave, Kills = current.Kills, Gold = current.Gold, Leaked = current.Leaked };
         /// <summary>The boss while it is alive, else null.</summary>
         public Enemy Boss
@@ -69,7 +86,8 @@ namespace DungeonConveyor
         readonly Queue<(EnemyCatalog.Entry def, int bridge, float hp)> pending = new Queue<(EnemyCatalog.Entry, int, float)>();
         float spawnTimer;
         bool flowDirty;
-        int clearedUpTo, picked; // wave numbers
+        int clearedUpTo; // wave number
+        readonly Queue<int> owed = new Queue<int>(); // card waves cleared, waiting for their pick
         WaveStats current, lastCleared;
         bool lossWatched;
 
@@ -86,7 +104,7 @@ namespace DungeonConveyor
             Flow = new FlowField(map);
             build.BuildingsChanged += () => flowDirty = true;
             NextWaveIn = FirstWaveDelay;
-            Wave = clearedUpTo = picked = Run.FirstWave - 1;
+            Wave = clearedUpTo = Run.FirstWave - 1;
             if (catalog == null || catalog.Entries.Count == 0)
                 Debug.LogWarning("WaveManager: Resources/EnemyCatalog.asset missing or empty (Dungeon > Sync Enemy Catalog).");
         }
@@ -135,17 +153,26 @@ namespace DungeonConveyor
                 e.Remove();
             }
 
-            // Every wave sent so far is over once the field is empty: each one earns a card.
+            // Every wave sent so far is over once the field is empty. Each card wave (every WavesPerCard-th) among them
+            // earns a card, and the HUD pauses the game for the pick right away.
             if (pending.Count == 0 && Enemy.All.Count == 0 && Wave > clearedUpTo)
             {
+                int every = Mathf.Max(1, RunSettings.Instance.WavesPerCard);
+                int together = Wave - clearedUpTo;
+                for (int w = clearedUpTo + 1; w <= Wave; w++)
+                    if (w % every == 0) owed.Enqueue(w);
                 clearedUpTo = Wave;
-                lastCleared = current;
-                lastCleared.Wave = Wave;
-                current = default;
+                if (owed.Count > 0)
+                {
+                    ClearedTogether = together;
+                    lastCleared = current;
+                    lastCleared.Wave = Wave;
+                    current = default;
+                }
             }
             if (CardsOwed > 0 && Offer == null)
             {
-                Offer = Run.Draw(build.Catalog, BuiltTowerIds());
+                Offer = Run.Draw(build.Catalog, BuiltTowerIds(), PickLuck);
                 if (AutoPickCards || Offer.Count == 0) Pick(Offer.Count > 0 ? Offer[0] : null);
             }
         }
@@ -163,7 +190,7 @@ namespace DungeonConveyor
         {
             if (CardsOwed <= 0) return;
             if (card != null) Run.Apply(card);
-            picked++;
+            owed.Dequeue();
             Offer = null;
         }
 
@@ -192,24 +219,29 @@ namespace DungeonConveyor
             NextWaveIn = Mathf.Max(MinWaveGap, WaveGap - Wave * 0.5f);
             if (catalog == null || catalog.Entries.Count == 0) return;
 
-            float hp = 1f + 0.15f * (Wave - 1) + 0.012f * Wave * Wave;
+            // Difficulty only changes enemy health and which kinds come (earlier, and more of the tough ones).
+            var difficulty = Run.Difficulty;
+            float hp = (1f + 0.15f * (Wave - 1) + 0.012f * Wave * Wave) * Mathf.Max(0.05f, difficulty.HealthMultiplier);
             int count = 4 + Wave * 2 + Wave * Wave / 8;
             int bridges = Mathf.Clamp(1 + Wave / 3, 1, Mathf.Max(1, map.Bridges.Count));
 
-            var unlocked = catalog.Entries.FindAll(e => e.FirstWave <= Wave);
+            var unlocked = catalog.Entries.FindAll(e => e.FirstWave - difficulty.EnemyUnlockShift <= Wave);
             if (unlocked.Count == 0) unlocked.Add(catalog.Entries[0]);
+            unlocked.Sort((a, b) => a.FirstWave.CompareTo(b.FirstWave)); // weakest first, so the last is the toughest
+            var weights = new float[unlocked.Count];
             float total = 0f;
-            foreach (var e in unlocked) total += e.Weight;
+            for (int i = 0; i < unlocked.Count; i++)
+                total += weights[i] = unlocked[i].Weight * Mathf.Pow(1f + Mathf.Max(0f, difficulty.TougherEnemyBias), i);
 
             var list = new List<EnemyCatalog.Entry>();
             for (int i = 0; i < count; i++)
             {
                 float roll = Random.value * total;
                 var pick = unlocked[0];
-                foreach (var e in unlocked)
+                for (int k = 0; k < unlocked.Count; k++)
                 {
-                    roll -= e.Weight;
-                    if (roll <= 0f) { pick = e; break; }
+                    roll -= weights[k];
+                    if (roll <= 0f) { pick = unlocked[k]; break; }
                 }
                 list.Add(pick);
             }

@@ -20,11 +20,11 @@ MonoBehaviour:
     MinBaseDistance: 0
     AmountPerTile: {x: 25, y: 45}
     Deposits:
-    - {fileID: -8088775952680602185, guid: b2928975d55c56c4baa127de3cd5c8a3, type: 3}
-    - {fileID: -5093700189509329542, guid: bb5535d585f6fa6488ea2049478a8572, type: 3}
-    - {fileID: -1483561698357434519, guid: 5a2255fdcd2c32b4888a63828f23810a, type: 3}
-    Item: {fileID: 6513811290069771234, guid: 4f66903dde9284a4ba41c2272a84e6fb, type: 3}
-    RefinedItem: {fileID: -1483561698357434519, guid: 5a2255fdcd2c32b4888a63828f23810a, type: 3}
+    - {fileID: 8762200162727468117, guid: 4315fec0a3939384c88d434a76464c33, type: 3}
+    - {fileID: 4149212048075711594, guid: 0abf1d328a890994bba74f6bcd285f2d, type: 3}
+    - {fileID: 4540644492439400627, guid: ed71bca985fe10b4bb742cb5fdb3d2c8, type: 3}
+    Item: {fileID: 6907172908975161101, guid: f418161ecb371b64c9debeedd27c9dc3, type: 3}
+    RefinedItem: {fileID: 4540644492439400627, guid: ed71bca985fe10b4bb742cb5fdb3d2c8, type: 3}
   - Name: Emerald
     Color: {r: 0.25, g: 0.85, b: 0.4, a: 1}
     Value: 8
@@ -32,11 +32,11 @@ MonoBehaviour:
     MinBaseDistance: 6
     AmountPerTile: {x: 20, y: 40}
     Deposits:
-    - {fileID: 8899464691301306101, guid: 04fc405baae06764ba85c965f3697c07, type: 3}
-    - {fileID: -130423932842062547, guid: af625b330d608b64887aa51f8f1e96f7, type: 3}
-    - {fileID: -9213831589183402913, guid: 00ea251a9330f1042866b7f60c2285fc, type: 3}
-    Item: {fileID: 2773739367496071257, guid: 2b94c0b2ab8c8ea42a71fd2c9b75aa35, type: 3}
-    RefinedItem: {fileID: -9213831589183402913, guid: 00ea251a9330f1042866b7f60c2285fc, type: 3}
+    - {fileID: 8784083988645421131, guid: e7eaf46d915cba743a3ae447b52041e1, type: 3}
+    - {fileID: 6915713013702869269, guid: 500788393f50c434299ff89b56e366b6, type: 3}
+    - {fileID: 8245999673821739266, guid: 2d8fdd2648822a64485639f7fb243aec, type: 3}
+    Item: {fileID: 8762278015884820716, guid: 004bc7b04f2745e4686717db112ebdc4, type: 3}
+    RefinedItem: {fileID: 8245999673821739266, guid: 2d8fdd2648822a64485639f7fb243aec, type: 3}
   - Name: Amethyst
     Color: {r: 0.7, g: 0.35, b: 1, a: 1}
     Value: 12
@@ -44,11 +44,11 @@ MonoBehaviour:
     MinBaseDistance: 10
     AmountPerTile: {x: 15, y: 35}
     Deposits:
-    - {fileID: -8185645679707339019, guid: 072b8490f14de334889bd4d8c690e20e, type: 3}
-    - {fileID: -2875847892693637034, guid: 3ca1b804f142fd04c88915a48514c892, type: 3}
-    - {fileID: 2552678971454977768, guid: 59d8a9b46fc45464daa96dcf0d927919, type: 3}
-    Item: {fileID: 475623316948278010, guid: 92e565d9f8ce5ee43953073765328b67, type: 3}
-    RefinedItem: {fileID: 2552678971454977768, guid: 59d8a9b46fc45464daa96dcf0d927919, type: 3}
+    - {fileID: 7756758779106965969, guid: d5390b119ae7c394dad85cbd2a1e59ed, type: 3}
+    - {fileID: 8562889176119518470, guid: 41328244f940a9d409912723a1ac4895, type: 3}
+    - {fileID: 4079361152542394724, guid: 857551aca52c38a479eb2fa9d9528dd0, type: 3}
+    Item: {fileID: 7950380436816092764, guid: a8038d155313f6e4687715cefbf5b03d, type: 3}
+    RefinedItem: {fileID: 4079361152542394724, guid: 857551aca52c38a479eb2fa9d9528dd0, type: 3}
   - Name: Gold
     Color: {r: 1, g: 0.75, b: 0.2, a: 1}
     Value: 20
@@ -56,11 +56,11 @@ MonoBehaviour:
     MinBaseDistance: 13
     AmountPerTile: {x: 12, y: 28}
     Deposits:
-    - {fileID: 1016235020893856444, guid: 29bac492b9a89734398cc0a0b08a0590, type: 3}
-    - {fileID: -8501559868097419703, guid: 9e9d894cffdc7ed42b50ff6db333ca9e, type: 3}
-    - {fileID: -1552419959593570724, guid: 82d43c5578527a14ea254a42928e05f7, type: 3}
-    Item: {fileID: -9209999968869179363, guid: b4fd360712934fc4b95169c83fdc0eb3, type: 3}
-    RefinedItem: {fileID: -1552419959593570724, guid: 82d43c5578527a14ea254a42928e05f7, type: 3}
+    - {fileID: 1763707845515938060, guid: f45622bf9c2a0d94fa887fdb5a740240, type: 3}
+    - {fileID: 2540635334336075474, guid: f0e748620ba858447858321b90ec87f3, type: 3}
+    - {fileID: 7113088443340077987, guid: bc00e8660964d644591b0dfb0f156a2a, type: 3}
+    Item: {fileID: 6257956490586769841, guid: 64576aa0e10ab5846b191aafcc78646b, type: 3}
+    RefinedItem: {fileID: 7113088443340077987, guid: bc00e8660964d644591b0dfb0f156a2a, type: 3}
   - Name: Ruby
     Color: {r: 1, g: 0.25, b: 0.25, a: 1}
     Value: 32
@@ -68,26 +68,26 @@ MonoBehaviour:
     MinBaseDistance: 16
     AmountPerTile: {x: 8, y: 20}
     Deposits:
-    - {fileID: 3805931681882716326, guid: db354015172185a48bf1e4c656c89f92, type: 3}
-    - {fileID: 3852037741137956023, guid: d93447c5841a022428a4ac7e40aae751, type: 3}
-    - {fileID: -9215055539270256278, guid: 9c6edf4b8fad5f74eb9093759bc24e87, type: 3}
-    Item: {fileID: 4361651544775307456, guid: 8d1752a9cb1cee045ac94ee6676f41f4, type: 3}
-    RefinedItem: {fileID: -9215055539270256278, guid: 9c6edf4b8fad5f74eb9093759bc24e87, type: 3}
+    - {fileID: 3500383323520224127, guid: 3a058aa338611a743adc6da3f81bf4a7, type: 3}
+    - {fileID: 9140397041533095097, guid: adb5935b7d2bc3e48a545f9762b4b2ec, type: 3}
+    - {fileID: 2732645561883802965, guid: 768d620f89065b841896af869e495d45, type: 3}
+    Item: {fileID: 5465952236365506483, guid: 93f60b7ad08a32f408b02a6dec51d688, type: 3}
+    RefinedItem: {fileID: 2732645561883802965, guid: 768d620f89065b841896af869e495d45, type: 3}
   DepositScale: 0.6
   ItemScale: 0.5
   CliffEdges:
-  - {fileID: -2716660689583004874, guid: 0be8a3a2e6bfe56459b7319cd23ac290, type: 3}
-  - {fileID: -348777465634432398, guid: 9a91d7dde96f67c47b922c253294a878, type: 3}
-  - {fileID: -3668411704931163941, guid: edd12cf8e8a4ff24ab40514bfdf175f7, type: 3}
-  CliffCorner: {fileID: -3753270745574954912, guid: ba6ba99d0437c024c860de7a6fc5b116, type: 3}
+  - {fileID: 4088636144968135340, guid: f7668329e679fcd43864cc88c9703a87, type: 3}
+  - {fileID: 3548292756912649865, guid: 1f1610c93608ff14abd0d1d5886721bc, type: 3}
+  - {fileID: 7069037155850756682, guid: e3450bce10ae0c24b816862e11e72b54, type: 3}
+  CliffCorner: {fileID: 8403090241796446111, guid: 7c782c10b61ef5444914474a1bd872ad, type: 3}
   CliffYaw: 180
   RockWalls:
-  - {fileID: 8728796427214546931, guid: 0b500401aa5486049a77ed0985784b75, type: 3}
-  - {fileID: 6744426863250436458, guid: d5c75c2ed549cb548b5f07df3b041555, type: 3}
-  - {fileID: -5931367938593997350, guid: cfa9f94b58065c744aac8edf79742d99, type: 3}
-  - {fileID: 1460076257475956497, guid: 25ccc6963848dc842babc2eef05102db, type: 3}
-  - {fileID: 614908820316204905, guid: 272474c19270e1b4fac1cbc50d7025fb, type: 3}
-  - {fileID: -5815458360320013473, guid: dd041522ca8543346ad8ddde3cb5129d, type: 3}
+  - {fileID: 4109168214402099618, guid: 0723938ca5e82a344b731c141f1ec980, type: 3}
+  - {fileID: 5505323130327708951, guid: 0d0cf68d5380c36488677a546a381949, type: 3}
+  - {fileID: 2225446195709354911, guid: cd861e4c640db6f4485303b23ba3a4e3, type: 3}
+  - {fileID: 3741229002429373872, guid: 350ed19a15690e742b6704a7fb48bd05, type: 3}
+  - {fileID: 6118906907499760788, guid: 36cab5427988ccb429ef0d1025df2f0b, type: 3}
+  - {fileID: 7601273129698328038, guid: 4b216f8bf240d2a4a87f31e680fff607, type: 3}
   RockAccents:
-  - {fileID: 3909745870667769942, guid: 2d78d0b4dd38c5841989865b8d8b31e9, type: 3}
+  - {fileID: 8518043201001237686, guid: befae02e4f13a1140b1697ce61f9d0a0, type: 3}
   RockAccentChance: 0.12

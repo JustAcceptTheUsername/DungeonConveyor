@@ -8,8 +8,11 @@ namespace DungeonConveyor
     /// <summary>
     /// The roguelike run: a series of stages, each a freshly generated map that is cleared by surviving its waves
     /// (every BossEvery-th wave is a lone boss, so with the default 10 waves each stage ends with one). After every
-    /// cleared wave the player picks one of three upgrade cards; when the stage's last wave is cleared the next, bigger
-    /// stage loads. Upgrades and leftover gold carry over. Losing the Core ends the run.
+    /// cleared wave the player picks one of three upgrade cards, each of a rolled rarity (common, rare, epic,
+    /// legendary; odds and power in RunSettings), rarer when several waves were cleared together or with Fortune's
+    /// Favor taken; when the stage's last wave is cleared the shop opens (crystals banked at the Core unlock buildings)
+    /// and the next, bigger stage loads. Upgrades, unlocks, crystals and leftover gold carry over. The difficulty
+    /// (picked in the main menu) only changes enemy health and kinds. Losing the Core ends the run.
     /// Static so it survives the scene reload between stages; a new Play (or Restart) starts over.
     /// </summary>
     public static class Run
@@ -58,15 +61,21 @@ namespace DungeonConveyor
 
         public enum CardIcon { Fire, Lightning, Frost, Poison, Damage, Speed, Range, Gold }
 
+        /// <summary>What a card does. The first four match <see cref="Element"/>.</summary>
+        public enum CardKind { Fire, Lightning, Frost, Poison, Damage, FireRate, Range, Income, Fortune }
+
         public class Card
         {
             public string Title, Tag, Text;
-            public Color Color;
+            public Color Color;      // the card's theme (element / stat), used for its tag
             public string TowerId;   // null = every tower
             public Mods Mods = new Mods();
             public float Income;     // +fraction of gold from crystals
+            public float Luck;       // + rarity luck for the rest of the run (Fortune's Favor)
             public CardIcon Icon;
-            public bool Rare;        // per-tower card
+            public CardKind Kind;
+            public Rarity Rarity;
+            public bool PerTower;    // a one-tower-type card (in the card gallery: not tied to a tower yet)
         }
 
         public static readonly Mods Global = new Mods();
@@ -75,6 +84,47 @@ namespace DungeonConveyor
 
         /// <summary>Multiplies gold from crystals sold at a Core.</summary>
         public static float IncomeMultiplier { get; private set; } = 1f;
+
+        /// <summary>Rarity luck from cards (Fortune's Favor); see RunSettings.LuckPerExtraWave for how luck works.</summary>
+        public static float Luck { get; private set; }
+
+        public static readonly string[] RarityNames = { "COMMON", "RARE", "EPIC", "LEGENDARY" };
+        /// <summary>Common gray, rare green, epic purple, legendary gold.</summary>
+        public static readonly Color[] RarityColors =
+        {
+            new Color(0.72f, 0.72f, 0.74f), new Color(0.3f, 0.88f, 0.38f), new Color(0.72f, 0.4f, 1f), new Color(1f, 0.78f, 0.2f),
+        };
+        public static Color ColorOf(Rarity r) => RarityColors[(int)r];
+
+        /// <summary>Chance of each rarity (sums to 1) for a card rolled with this much luck.</summary>
+        public static float[] RarityChances(float luck)
+        {
+            var settings = RunSettings.Instance;
+            var p = new float[4];
+            float total = 0f;
+            for (int i = 0; i < 4; i++)
+            {
+                p[i] = Mathf.Max(0f, settings.Weight((Rarity)i)) * Mathf.Pow(1f + Mathf.Max(0f, luck), i);
+                total += p[i];
+            }
+            for (int i = 0; i < 4; i++) p[i] = total > 0f ? p[i] / total : i == 0 ? 1f : 0f;
+            return p;
+        }
+
+        /// <summary>Luck for a pick earned by clearing <paramref name="wavesTogether"/> waves at once (run luck included).</summary>
+        public static float LuckFor(int wavesTogether) => Luck + RunSettings.Instance.LuckPerExtraWave * Mathf.Max(0, wavesTogether - 1);
+
+        static Rarity RollRarity(float luck)
+        {
+            var p = RarityChances(luck);
+            float roll = Random.value;
+            for (int i = 0; i < 3; i++)
+            {
+                roll -= p[i];
+                if (roll < 0f) return (Rarity)i;
+            }
+            return Rarity.Legendary;
+        }
 
         /// <summary>Global plus this tower type's bonuses.</summary>
         public static Mods For(string towerId)
@@ -95,7 +145,7 @@ namespace DungeonConveyor
         static readonly string[] ElementNames = { "FIRE", "LIGHTNING", "FROST", "POISON" };
         static readonly string[] ElementEffects =
         {
-            "and set enemies burning", "and arc to a nearby enemy", "and chill enemies (slow)", "and stack poison",
+            "and sets enemies on fire", "and arcs to a nearby enemy", "and chills (slows) enemies", "and poisons enemies (stacking)",
         };
 
         public static void Apply(Card c)
@@ -107,28 +157,35 @@ namespace DungeonConveyor
                 m.Add(c.Mods);
             }
             IncomeMultiplier += c.Income;
+            Luck += c.Luck;
             Taken.Add(c);
         }
 
-        /// <summary>Three different upgrade cards. Tower-specific ones favour tower types the player has built.</summary>
-        public static List<Card> Draw(BuildingCatalog catalog, ICollection<string> builtIds)
+        /// <summary>
+        /// Three different upgrade cards, each rolling its own rarity with the given luck (see LuckFor). Tower-specific
+        /// ones only name unlocked towers and favour tower types the player has built.
+        /// </summary>
+        public static List<Card> Draw(BuildingCatalog catalog, ICollection<string> builtIds, float luck)
         {
             var towers = new List<BuildingCatalog.Entry>();
             if (catalog != null)
                 foreach (var e in catalog.Entries)
-                    if (e.Purchasable && e.Attack != AttackKind.None && e.Attack != AttackKind.Slow) towers.Add(e);
+                    if (e.Purchasable && IsUnlocked(e.Id) && e.Attack != AttackKind.None && e.Attack != AttackKind.Slow) towers.Add(e);
 
             var cards = new List<Card>();
             for (int guard = 0; cards.Count < 3 && guard < 50; guard++)
             {
-                var c = Roll(towers, builtIds);
+                var c = Roll(towers, builtIds, RollRarity(luck));
                 if (c != null && !cards.Exists(x => x.Title == c.Title && x.Tag == c.Tag)) cards.Add(c);
             }
             return cards;
         }
 
-        static Card Roll(List<BuildingCatalog.Entry> towers, ICollection<string> builtIds)
+        static Card Roll(List<BuildingCatalog.Entry> towers, ICollection<string> builtIds, Rarity rarity)
         {
+            if (rarity == Rarity.Legendary && Random.value < RunSettings.Instance.FortuneShareOfLegendaries)
+                return Make(CardKind.Fortune, rarity, null, false);
+
             bool perType = towers.Count > 0 && Random.value < 0.45f;
             BuildingCatalog.Entry t = null;
             if (perType)
@@ -137,59 +194,162 @@ namespace DungeonConveyor
                 var from = built.Count > 0 && Random.value < 0.75f ? built : towers;
                 t = from[Random.Range(0, from.Count)];
             }
-            string scope = t != null ? t.Name.ToUpperInvariant() : "ALL TOWERS";
-            string who = t != null ? t.Name + "s" : "All towers";
-            var c = new Card { TowerId = t?.Id, Rare = t != null };
 
-            float roll = Random.value;
-            if (roll < 0.55f)
+            CardKind kind;
+            if (Random.value < 0.55f) kind = (CardKind)Random.Range(0, 4);
+            else if (t != null) kind = t.Attack == AttackKind.Mine ? CardKind.Damage : (CardKind)Random.Range((int)CardKind.Damage, (int)CardKind.Range + 1);
+            else kind = (CardKind)Random.Range((int)CardKind.Damage, (int)CardKind.Income + 1);
+            return Make(kind, rarity, t, t != null);
+        }
+
+        /// <summary>
+        /// Builds a card. Its bonus is the common amount times the rarity's power (RunSettings). perTower with no tower
+        /// makes the gallery version ("one tower type"); global cards are weaker than per-tower ones.
+        /// </summary>
+        public static Card Make(CardKind kind, Rarity rarity, BuildingCatalog.Entry tower, bool perTowerCard)
+        {
+            var settings = RunSettings.Instance;
+            float p = settings.Power(rarity);
+            bool one = perTowerCard;
+            string scope = tower != null ? tower.Name.ToUpperInvariant() : one ? "ONE TOWER TYPE" : "ALL TOWERS";
+            string who = tower != null ? tower.Name + "s" : one ? "One tower type" : "All towers";
+            // "One tower type" is singular: "deals", not "deal".
+            string V(string verb) => tower == null && one ? verb + (verb.EndsWith("h") ? "es" : "s") : verb;
+            var c = new Card { Kind = kind, Rarity = rarity, TowerId = tower?.Id, PerTower = one };
+
+            if (kind <= CardKind.Poison)
             {
-                var el = (Element)Random.Range(0, 4);
-                int amount = t != null ? 6 : 3;
-                c.Mods.Elements[(int)el] = amount;
-                c.Title = $"+{amount} {ElementNames[(int)el]}";
+                int el = (int)kind;
+                int amount = Mathf.Max(1, Mathf.RoundToInt((one ? 6 : 3) * p));
+                c.Mods.Elements[el] = amount;
+                c.Title = $"+{amount} {ElementNames[el]}";
                 c.Tag = "ELEMENT · " + scope;
-                c.Text = $"{who}: hits deal +{amount} {ElementNames[(int)el].ToLowerInvariant()} damage {ElementEffects[(int)el]}.";
-                c.Color = ElementColors[(int)el];
-                c.Icon = (CardIcon)(int)el; // Element and CardIcon list the four elements in the same order
+                c.Text = $"{who}: each hit deals +{amount} {ElementNames[el].ToLowerInvariant()} damage {ElementEffects[el]}.";
+                c.Color = ElementColors[el];
+                c.Icon = (CardIcon)el; // Element and CardIcon list the four elements in the same order
                 return c;
             }
 
             c.Color = new Color(1f, 0.78f, 0.35f);
             c.Tag = "STAT · " + scope;
-            int kind = Random.Range(0, t != null ? 3 : 4);
-            bool mine = t != null && t.Attack == AttackKind.Mine;
-            if (mine) kind = 0; // fire rate and trigger range mean nothing for mines
             switch (kind)
             {
-                case 0:
-                    c.Mods.Damage = t != null ? 0.3f : 0.12f;
+                case CardKind.Damage:
+                    c.Mods.Damage = Round((one ? 0.3f : 0.12f) * p);
                     c.Icon = CardIcon.Damage;
                     c.Title = $"+{c.Mods.Damage * 100f:0}% DAMAGE";
-                    c.Text = $"{who} deal {c.Mods.Damage * 100f:0}% more damage.";
+                    c.Text = $"{who} {V("deal")} {c.Mods.Damage * 100f:0}% more damage.";
                     break;
-                case 1:
-                    c.Mods.FireRate = t != null ? 0.25f : 0.1f;
+                case CardKind.FireRate:
+                    c.Mods.FireRate = Round((one ? 0.25f : 0.1f) * p);
                     c.Icon = CardIcon.Speed;
                     c.Title = $"+{c.Mods.FireRate * 100f:0}% ATTACK SPEED";
-                    c.Text = $"{who} attack {c.Mods.FireRate * 100f:0}% faster.";
+                    c.Text = $"{who} {V("attack")} {c.Mods.FireRate * 100f:0}% faster.";
                     break;
-                case 2:
-                    c.Mods.Range = t != null ? 1f : 0.5f;
+                case CardKind.Range:
+                    c.Mods.Range = Mathf.Round((one ? 1f : 0.5f) * p * 10f) / 10f;
                     c.Icon = CardIcon.Range;
                     c.Title = $"+{c.Mods.Range:0.#} RANGE";
-                    c.Text = $"{who} reach {c.Mods.Range:0.#} cells further.";
+                    c.Text = $"{who} {V("reach")} {c.Mods.Range:0.#} {(c.Mods.Range == 1f ? "cell" : "cells")} further.";
                     break;
-                default:
-                    c.Income = 0.2f;
+                case CardKind.Income:
+                    c.Income = Round(0.2f * p);
                     c.Icon = CardIcon.Gold;
                     c.Tag = "ECONOMY";
-                    c.Title = "+20% CRYSTAL GOLD";
-                    c.Text = "Crystals sold at the Core pay 20% more gold.";
+                    c.Title = $"+{c.Income * 100f:0}% CRYSTAL GOLD";
+                    c.Text = $"Crystals sold at the Core pay {c.Income * 100f:0}% more gold.";
                     c.Color = UIStyle.GoldColor;
+                    break;
+                default: // Fortune
+                    c.Luck = settings.FortuneLuck;
+                    c.Icon = CardIcon.Gold;
+                    c.Tag = "FORTUNE · WHOLE RUN";
+                    c.Title = "FORTUNE'S FAVOR";
+                    c.Text = "For the rest of the run, rare, epic and legendary cards turn up more often.";
+                    c.Color = ColorOf(Rarity.Legendary);
                     break;
             }
             return c;
+        }
+
+        /// <summary>Percent bonuses rounded to whole percents.</summary>
+        static float Round(float fraction) => Mathf.Round(fraction * 100f) / 100f;
+
+        /// <summary>Every card that can show up, for the gallery: each kind at each rarity, per-tower ones untied.</summary>
+        public static List<Card> AllCards()
+        {
+            var list = new List<Card>();
+            for (int r = 0; r < 4; r++)
+            {
+                var rarity = (Rarity)r;
+                for (var k = CardKind.Fire; k <= CardKind.Income; k++) list.Add(Make(k, rarity, null, false));
+                for (var k = CardKind.Fire; k <= CardKind.Range; k++) list.Add(Make(k, rarity, null, true));
+            }
+            list.Add(Make(CardKind.Fortune, Rarity.Legendary, null, false));
+            return list;
+        }
+
+        // ---------------------------------------------------------------- buildings and crystals
+
+        static readonly HashSet<string> unlocked = new HashSet<string>();
+        static bool unlocksSeeded;
+
+        /// <summary>Crystals banked this run (delivered to a Core); spent in the shop between maps.</summary>
+        public static int Crystals { get; private set; }
+
+        public static void AddCrystals(int n) => Crystals += Mathf.Max(0, n);
+
+        /// <summary>Starting buildings, plus whatever was bought in the shop this run.</summary>
+        public static bool IsUnlocked(string id)
+        {
+            if (!unlocksSeeded)
+            {
+                unlocksSeeded = true;
+                foreach (var s in RunSettings.Instance.StartingBuildings) unlocked.Add(s);
+            }
+            return unlocked.Contains(id);
+        }
+
+        /// <summary>Buys a building in the shop; false if it is unaffordable or not on sale yet.</summary>
+        public static bool TryUnlock(string id)
+        {
+            if (IsUnlocked(id)) return false;
+            var item = RunSettings.Instance.ShopEntry(id);
+            if (Crystals < item.Crystals || Stage + 1 < item.AvailableAfterMap) return false;
+            Crystals -= item.Crystals;
+            unlocked.Add(id);
+            return true;
+        }
+
+        /// <summary>Opens every building (playtests).</summary>
+        public static void UnlockAll(BuildingCatalog catalog)
+        {
+            IsUnlocked("");
+            if (catalog != null) foreach (var e in catalog.Entries) unlocked.Add(e.Id);
+        }
+
+        // ---------------------------------------------------------------- difficulty
+
+        const string DifficultyKey = "Difficulty";
+
+        /// <summary>The difficulty picked in the main menu (remembered between sessions).</summary>
+        public static int DifficultyIndex
+        {
+            get
+            {
+                var list = RunSettings.Instance.Difficulties;
+                return Mathf.Clamp(PlayerPrefs.GetInt(DifficultyKey, RunSettings.Instance.DefaultDifficulty), 0, Mathf.Max(0, list.Count - 1));
+            }
+            set => PlayerPrefs.SetInt(DifficultyKey, value);
+        }
+
+        public static RunSettings.Difficulty Difficulty
+        {
+            get
+            {
+                var list = RunSettings.Instance.Difficulties;
+                return list.Count > 0 ? list[DifficultyIndex] : new RunSettings.Difficulty { Name = "Warden" };
+            }
         }
 
         // ---------------------------------------------------------------- progress
@@ -229,6 +389,10 @@ namespace DungeonConveyor
             Stage = 0;
             CarriedGold = 0;
             IncomeMultiplier = 1f;
+            Luck = 0f;
+            Crystals = 0;
+            unlocked.Clear();
+            unlocksSeeded = false;
             Global.Damage = Global.FireRate = Global.Range = 0f;
             for (int i = 0; i < Global.Elements.Length; i++) Global.Elements[i] = 0f;
             perTower.Clear();

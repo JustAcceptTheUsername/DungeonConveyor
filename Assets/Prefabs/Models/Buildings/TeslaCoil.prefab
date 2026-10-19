@@ -1,0 +1,165 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3530295565019934616
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7550712829270383981}
+  m_Layer: 0
+  m_Name: CoilTop
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7550712829270383981
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3530295565019934616}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0, y: 1.5, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 3818537445531477387}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &7754139361369161907
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6573660729942506747}
+  m_Layer: 0
+  m_Name: EffectOrigin
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6573660729942506747
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7754139361369161907}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 1.379, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 5513086459650387601}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &5388118115384234273
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8909428289235959629, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      propertyPath: m_Name
+      value: TeslaCoil
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7550712829270383981}
+    - targetCorrespondingSourceObject: {fileID: 451514501622742960, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6573660729942506747}
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 8909428289235959629, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7415170356013876448}
+  m_SourcePrefab: {fileID: 229242443869199701, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+--- !u!1 &3558641073966984812 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8909428289235959629, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+  m_PrefabInstance: {fileID: 5388118115384234273}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &7415170356013876448
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3558641073966984812}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b7fc73007d3e3c4a8769550c76f907b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.BuildingFx
+  Muzzles:
+  - {fileID: 7550712829270383981}
+  FireEffect: {fileID: 6779722643451835259, guid: a17166d06fb896f44a3197a3c7677b25, type: 3}
+  DetachFireEffect: 0
+  DetachedLifetime: 4
+  LoopEffect: {fileID: 4160840340351313269, guid: fa82dfe8924b77c4bb90af269774435c, type: 3}
+  LoopPoint: {fileID: 7550712829270383981}
+  LoopAlways: 1
+--- !u!4 &3818537445531477387 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -128252037195533142, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+  m_PrefabInstance: {fileID: 5388118115384234273}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &5513086459650387601 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 451514501622742960, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+  m_PrefabInstance: {fileID: 5388118115384234273}
+  m_PrefabAsset: {fileID: 0}

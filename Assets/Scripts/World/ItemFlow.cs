@@ -73,6 +73,7 @@ namespace DungeonConveyor
                     if (map.IsOre(m.Origin + new Vector2Int(x, y))) oreCells++;
 
             float rate = oreCells * MinerRatePerOre * (m.Def.Id == "MineShaft" ? MineShaftMultiplier : 1f);
+            m.SetWorking(m.Stored.Count < MinerStorage && rate > 0f);
             if (m.Stored.Count < MinerStorage && rate > 0f)
             {
                 m.Timer += dt * rate;
@@ -102,12 +103,16 @@ namespace DungeonConveyor
         {
             if (s.Buffer.Count == 0) return;
             var belt = NextOutput(s, ref s.NextOutput);
-            if (belt != null) Launch(belt, s.Buffer.Dequeue());
+            if (belt == null) return;
+            Launch(belt, s.Buffer.Dequeue());
+            s.PlayEffect();
         }
 
         void TickRefiner(Refiner r, float dt)
         {
-            if (r.Input.Count > 0 && r.Output.Count < Refiner.Capacity)
+            bool refining = r.Input.Count > 0 && r.Output.Count < Refiner.Capacity;
+            r.SetWorking(refining);
+            if (refining)
             {
                 r.Progress += dt / Mathf.Max(0.05f, RefineTime);
                 if (r.Progress >= 1f)
@@ -226,6 +231,9 @@ namespace DungeonConveyor
                 int value = Mathf.RoundToInt(ValueOf(item) * Run.IncomeMultiplier);
                 Destroy(item.Renderer.gameObject);
                 build.Earn(value, build.Core.transform.position);
+                build.Core.PlayEffect();
+                var settings = RunSettings.Instance;
+                Run.AddCrystals(settings.CrystalsPerItem + (item.Refined ? settings.RefinedCrystalBonus : 0));
                 Delivered++;
                 if (item.Refined) DeliveredRefined++;
                 GoldFromOre += value;

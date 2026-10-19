@@ -113,7 +113,7 @@ namespace DungeonConveyor.EditorTools
             return list.Count > 0;
         }
 
-        /// <summary>The .glb version of a model (keeps emissive materials), falling back to .obj.</summary>
+        /// <summary>The model's prefab (Dungeon > Create Model Prefabs), else its .glb (keeps emissive materials), falling back to .obj.</summary>
         static GameObject Model(string pathWithoutExtension)
         {
             foreach (var ext in new[] { ".glb", ".gltf", ".obj", ".fbx" })
@@ -121,7 +121,7 @@ namespace DungeonConveyor.EditorTools
                 var path = pathWithoutExtension + ext;
                 if (!File.Exists(path)) continue;
                 var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                if (go != null) return go;
+                if (go != null) return ModelPrefabs.Prefer(path, go);
             }
             return null;
         }

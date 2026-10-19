@@ -17,7 +17,7 @@ namespace DungeonConveyor.EditorTools
             BuildingCatalogSync.Sync();
             EnemyCatalogSync.Sync();
             ArtLibrarySync.Sync();
-            EditorSceneManager.OpenScene("Assets/Scenes/SampleScene.unity");
+            EditorSceneManager.OpenScene(SceneSetup.GameScene);
             EditorApplication.EnterPlaymode();
         }
     }

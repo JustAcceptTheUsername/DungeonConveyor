@@ -165,7 +165,7 @@ namespace DungeonConveyor.EditorTools
                 if (go == null) continue;
                 var id = Path.GetFileNameWithoutExtension(path);
                 if (Excluded.Contains(id)) continue;
-                if (!result.ContainsKey(id) || ext == ".glb" || ext == ".gltf") result[id] = go;
+                if (!result.ContainsKey(id) || ext == ".glb" || ext == ".gltf") result[id] = ModelPrefabs.Prefer(path, go);
             }
             return result;
         }

@@ -139,7 +139,9 @@ namespace DungeonConveyor
                             ElementalHit(e, elements, dt * ContinuousHitsPerSecond);
                             if (Random.value < dt * 6f) Fx.Spawn(e.AimPoint, new Color(1f, 0.5f, 0.1f, 0.8f), 0.25f, 0.6f, 0.35f, Vector3.up * 0.5f);
                         }
-                    if (any && Random.value < dt * 12f)
+                    t.SetWorking(any);
+                    bool jet = t.Effects != null && t.Effects.LoopEffect != null;
+                    if (any && !jet && Random.value < dt * 12f)
                     {
                         var dir = Random.insideUnitCircle * range;
                         Fx.Spawn(Muzzle(t), new Color(1f, 0.55f, 0.15f, 0.7f), 0.2f, 0.7f, 0.45f, map.GridToWorld(center + dir) - map.GridToWorld(center));
@@ -153,7 +155,8 @@ namespace DungeonConveyor
                     {
                         if (e.Def.Hover > 0f || !InRange(e, center, def.Range)) continue;
                         Splash(center, def.Splash, damage, true, elements);
-                        Fx.Explosion(map.GridToWorld(center, t.Level), def.Splash, new Color(1f, 0.6f, 0.2f, 0.9f));
+                        if (HasFireEffect(t)) t.PlayEffect();
+                        else Fx.Explosion(map.GridToWorld(center, t.Level), def.Splash, new Color(1f, 0.6f, 0.2f, 0.9f));
                         build.RemoveBuilding(t, refund: false);
                         return;
                     }
@@ -163,6 +166,7 @@ namespace DungeonConveyor
                 {
                     t.Target = PickTarget(center, range, 0f, t.Target);
                     if (t.Beam == null) t.Beam = Fx.NewLine("Laser", t.transform, new Color(1f, 0.25f, 0.3f, 0.9f), 0.06f);
+                    t.SetWorking(t.Target != null);
                     if (t.Target == null) { t.Beam.enabled = false; return; }
                     t.Beam.loop = false;
                     t.Beam.positionCount = 2;
@@ -184,20 +188,23 @@ namespace DungeonConveyor
             if (t.Target == null) return;
             t.Cooldown = 1f / Mathf.Max(0.05f, def.FireRate * rate);
             var muzzle = Muzzle(t);
+            // The model's own muzzle effect replaces the generic flash; either way the next barrel fires next time.
+            bool flashed = HasFireEffect(t);
+            if (t.Effects != null) t.Effects.Fire();
 
             switch (def.Attack)
             {
                 case AttackKind.Bullet:
-                    Fx.Flash(muzzle, new Color(1f, 0.8f, 0.3f));
+                    if (!flashed) Fx.Flash(muzzle, new Color(1f, 0.8f, 0.3f));
                     Fire(AttackKind.Bullet, muzzle, t.Target, damage, 0f, new Color(1f, 0.85f, 0.4f), 0.14f).Elements = elements;
                     break;
                 case AttackKind.Missile:
-                    Fx.Flash(muzzle, new Color(1f, 0.6f, 0.2f));
+                    if (!flashed) Fx.Flash(muzzle, new Color(1f, 0.6f, 0.2f));
                     Fire(AttackKind.Missile, muzzle, t.Target, damage, def.Splash, new Color(1f, 0.5f, 0.2f), 0.22f).Elements = elements;
                     break;
                 case AttackKind.Mortar:
                 {
-                    Fx.Flash(muzzle, new Color(1f, 0.7f, 0.3f), 0.5f);
+                    if (!flashed) Fx.Flash(muzzle, new Color(1f, 0.7f, 0.3f), 0.5f);
                     var shot = Fire(AttackKind.Mortar, muzzle, null, damage, def.Splash, new Color(1f, 0.75f, 0.35f), 0.24f);
                     shot.Elements = elements;
                     shot.GridEnd = t.Target.GridPos;
@@ -211,7 +218,19 @@ namespace DungeonConveyor
             }
         }
 
-        Vector3 Muzzle(Tower t) => t.transform.position + Vector3.up * 0.55f;
+        /// <summary>
+        /// Where the tower's next shot starts: its model's next muzzle point if it has any (kept on the sprite plane),
+        /// else a fixed spot above its centre.
+        /// </summary>
+        Vector3 Muzzle(Tower t)
+        {
+            if (t.Effects == null || !t.Effects.HasMuzzles) return t.transform.position + Vector3.up * 0.55f;
+            var p = t.Effects.NextMuzzle;
+            p.z = t.transform.position.z;
+            return p;
+        }
+
+        static bool HasFireEffect(Tower t) => t.Effects != null && t.Effects.FireEffect != null;
 
         static bool InRange(Enemy e, Vector2 center, float range) => (e.GridPos - center).sqrMagnitude <= range * range;
 

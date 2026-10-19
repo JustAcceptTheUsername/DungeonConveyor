@@ -350,13 +350,18 @@ namespace DungeonConveyor
             return g;
         }
 
-        /// <summary>Text in virtual units with a soft drop shadow; <paramref name="title"/> picks the display font.</summary>
+        /// <summary>
+        /// Text in virtual units with a soft drop shadow; <paramref name="title"/> picks the display font. Shrinks to fit
+        /// its rect (width, or wrapped height) so it never spills out of its panel.
+        /// </summary>
         void Txt(float x, float y, float w, float h, string text, float size, Color c, TextAnchor a = TextAnchor.MiddleLeft,
             bool title = false, bool bold = false, bool wrap = false, bool shadow = true)
         {
             if (Event.current.type != EventType.Repaint) return;
             var g = St(size, title, bold, wrap, a);
             var r = R(x, y, w, h);
+            int fit = UIStyle.FitFontSize(g, text, r);
+            if (fit < g.fontSize) g = St(size * fit / g.fontSize, title, bold, wrap, a);
             if (shadow)
             {
                 GUI.contentColor = new Color(0f, 0f, 0f, c.a * 0.75f);
@@ -440,8 +445,9 @@ namespace DungeonConveyor
         void DrawTopBar()
         {
             // Gold: banner plate, coin and the counter (bumps, ticks red when spending, flashes on a boss bounty).
+            // Gold and crystals are centred as one group, so it stays clear of the wave panel and the Core bar.
             const float bw = 320, bh = 84;
-            float x = (vw - bw) * 0.5f, y = 6;
+            float x = (vw - (bw + 6 + CrystalsW)) * 0.5f, y = 6;
             Frame(x, y, bw, bh, ArcaneSkin.Banner);
             string text = gold.Value.ToString("N0");
             float size = 36f * (1f + 0.18f * Mathf.Sin(gold.Bump.N * Mathf.PI) * (gold.Bump.Active ? 1f : 0f));
@@ -462,8 +468,26 @@ namespace DungeonConveyor
             col = Color.Lerp(col, new Color(1f, 0.9f, 0.5f), goldFlash.Fade);
             Txt(cx + 54, y, tw + 20, bh, text, size, col, TextAnchor.MiddleLeft, true);
             goldPx = new Vector2((cx + 26) * s, (y + bh * 0.5f) * s);
+            DrawCrystals(x + bw + 6, y, bh);
 
             DrawCoreBar();
+        }
+
+        /// <summary>Crystals banked this run (spent in the shop between maps), right of the gold.</summary>
+        const float CrystalsW = 230;
+
+        void DrawCrystals(float x, float y, float h)
+        {
+            const float w = CrystalsW;
+            var r = Frame(x, y, w, h, ArcaneSkin.Banner);
+            string text = Run.Crystals.ToString("N0");
+            float tw = St(28, true, false, false, TextAnchor.MiddleLeft).CalcSize(new GUIContent(text)).x / s;
+            float total = 34 + 8 + tw, cx = x + (w - total) * 0.5f;
+            if (Skin) Icon(ArcaneSkin.GemRare, cx, y + h * 0.5f - 17, 34, 34);
+            Txt(cx + 42, y, tw + 20, h, text, 28, new Color(0.6f, 0.85f, 1f), TextAnchor.MiddleLeft, true);
+            if (r.Contains(Event.current.mousePosition))
+                SetTip("Crystals", "BANKED THIS RUN", "Every crystal delivered to the Core is sold and also banked here. Spend crystals in the shop after each map to unlock new buildings.",
+                    new Rect(x, y, w, h), false);
         }
 
         void DrawCoreBar()
@@ -557,7 +581,9 @@ namespace DungeonConveyor
             int inMap = waves.Wave - waves.FirstWave + 1, total = Run.Current.Waves;
             bool boss = Run.IsBossWave(waves.Wave) && waves.Alive > 0;
             float cx = x + 30, cw = w - 60;
-            TxtC(cx, y + 50, cw, 22, $"MAP {Run.Stage + 1}", 17, UIStyle.Muted, true);
+            int cardAt = waves.NextCardWave - waves.FirstWave + 1;
+            string mapLine = cardAt <= total ? $"MAP {Run.Stage + 1}  ·  CARD AT WAVE {cardAt}" : $"MAP {Run.Stage + 1}";
+            TxtC(cx, y + 50, cw, 22, mapLine, 17, UIStyle.Muted, true);
             TxtC(cx, y + 70, cw, 36, inMap <= 0 ? "BUILD PHASE" : boss ? "BOSS WAVE" : $"WAVE {inMap} / {total}", inMap <= 0 ? 24 : 28,
                 boss ? UIStyle.Danger : UIStyle.Parchment, true);
 
@@ -632,33 +658,7 @@ namespace DungeonConveyor
 
         Rect UpgradeRect(int i) => new Rect(UpX + (i % UpCols) * UpStride, UpY + (i / UpCols) * UpStride, UpCell, UpCell);
 
-        static Texture2D IconFor(Run.CardIcon i)
-        {
-            switch (i)
-            {
-                case Run.CardIcon.Fire: return ArcaneSkin.IconFire;
-                case Run.CardIcon.Lightning: return ArcaneSkin.IconLightning;
-                case Run.CardIcon.Frost: return ArcaneSkin.IconFrost;
-                case Run.CardIcon.Poison: return ArcaneSkin.IconPoison;
-                case Run.CardIcon.Damage: return ArcaneSkin.IconDamage;
-                case Run.CardIcon.Speed: return ArcaneSkin.IconSpeed;
-                case Run.CardIcon.Range: return ArcaneSkin.IconRange;
-                default: return ArcaneSkin.IconGold;
-            }
-        }
-
-        static Texture2D CardFrameFor(Run.CardIcon i)
-        {
-            switch (i)
-            {
-                case Run.CardIcon.Fire: return ArcaneSkin.CardFire;
-                case Run.CardIcon.Lightning: return ArcaneSkin.CardLightning;
-                case Run.CardIcon.Frost: return ArcaneSkin.CardFrost;
-                case Run.CardIcon.Poison: return ArcaneSkin.CardPoison;
-                case Run.CardIcon.Gold: return ArcaneSkin.CardGold;
-                default: return ArcaneSkin.CardStat;
-            }
-        }
+        static Texture2D IconFor(Run.CardIcon i) => CardArt.IconFor(i);
 
         /// <summary>One small emblem per card taken this run; hover shows what it does.</summary>
         void DrawUpgradeRow()
@@ -676,10 +676,17 @@ namespace DungeonConveyor
                 if (Event.current.type == EventType.Repaint)
                 {
                     float g = over ? 2f : 0f;
+                    if (c.Rarity != Rarity.Common)
+                    {
+                        var rc = Run.ColorOf(c.Rarity);
+                        GUI.color = new Color(rc.r, rc.g, rc.b, 0.75f);
+                        UIStyle.GlowRing(r, s, 6f);
+                        Untint();
+                    }
                     UIStyle.Nine(R(v.x - g, v.y - g, v.width + 2 * g, v.height + 2 * g), over ? ArcaneSkin.SlotHover : ArcaneSkin.Slot, s);
                 }
                 Icon(IconFor(c.Icon), v.x + 7, v.y + 7, v.width - 14, v.height - 14);
-                if (over) SetTip(c.Title, c.Tag, c.Text, v, true);
+                if (over) SetTip(c.Title, Run.RarityNames[(int)c.Rarity] + "  ·  " + c.Tag, c.Text, v, true);
             }
             if (n > cap) Txt(UpX, UpY + UpRows * UpStride, 200, 24, $"+{n - cap} more", 16, UIStyle.Muted);
         }
@@ -716,7 +723,13 @@ namespace DungeonConveyor
             Txt((vw - 620) * 0.5f, 112, 620, 96, boss ? "BOSS WAVE CLEARED" : $"WAVE {cleared} CLEARED", 40, new Color(UIStyle.Parchment.r, UIStyle.Parchment.g, UIStyle.Parchment.b, ba), TextAnchor.MiddleCenter, true);
             Untint();
             GUI.matrix = old;
-            if (age > 0.2f) TxtC(0, 206, vw, 28, "Choose an upgrade", 22, UIStyle.Muted);
+            if (age > 0.2f)
+            {
+                int together = waves.ClearedTogether;
+                if (together > 1)
+                    TxtC(0, 206, vw, 28, $"{together} waves cleared together  ·  rarity boosted!", 22, Run.ColorOf(Rarity.Epic), false, true);
+                else TxtC(0, 206, vw, 28, "Choose an upgrade", 22, UIStyle.Muted);
+            }
 
             DrawTally(age);
 
@@ -740,6 +753,21 @@ namespace DungeonConveyor
                 TxtC(0, bottom, vw, 26, "Press 1, 2 or 3, or click a card", 18, UIStyle.Muted);
             if (waves.CardsOwed > 1)
                 TxtC(0, bottom + 26, vw, 26, $"{waves.CardsOwed - 1} more pick{(waves.CardsOwed > 2 ? "s" : "")} after this one", 16, UIStyle.Muted);
+            DrawRarityOdds(bottom + 58, waves.PickLuck);
+        }
+
+        /// <summary>The chance of each rarity for these picks, each in its colour.</summary>
+        void DrawRarityOdds(float y, float luck)
+        {
+            var p = Run.RarityChances(luck);
+            const float cw = 190;
+            float x0 = (vw - 4 * cw) * 0.5f;
+            for (int i = 0; i < 4; i++)
+            {
+                float pct = p[i] * 100f;
+                string v = pct >= 9.95f ? pct.ToString("0") : pct.ToString("0.#");
+                TxtC(x0 + i * cw, y, cw, 24, $"{Run.RarityNames[i]} {v}%", 16, Run.RarityColors[i], false, true);
+            }
         }
 
         /// <summary>Wave tally: kills, gold earned, leaked (counting up), plus a FLAWLESS stamp when nothing got through.</summary>
@@ -785,9 +813,7 @@ namespace DungeonConveyor
             float a = alpha * Mathf.Clamp01(deal * 3f);
             if (!Skin)
             {
-                Frame(rr.x, rr.y, rr.width, rr.height, null);
-                TxtC(rr.x, rr.y + 10, rr.width, 40, c.Title, 22, c.Color, true);
-                TxtC(rr.x + 16, rr.y + 100, rr.width - 32, rr.height - 120, c.Text, 17, UIStyle.Parchment, false, false, true);
+                CardArt.Plain(c, R(rr), a);
                 return;
             }
 
@@ -796,33 +822,17 @@ namespace DungeonConveyor
             float fw = back ? w * (1f - deal * 2f) : w * (deal * 2f - 1f);
             if (deal >= 1f) fw = w;
             var fr = new Rect(centre.x - fw * 0.5f, rr.y, Mathf.Max(1f, fw), rr.height);
-            if (c.Rare || hot)
-            {
-                float ga = (hot ? 0.9f : 0.55f) * a * (deal >= 1f ? 1f : 0f);
-                GUI.color = c.Rare ? new Color(0.45f, 0.75f, 1f, ga) : new Color(1f, 0.95f, 0.8f, ga);
-                UIStyle.GlowRing(R(fr), s, hot ? 16f : 12f);
-            }
-            GUI.color = back ? new Color(0.28f, 0.26f, 0.3f, a) : new Color(1f, 1f, 1f, a);
-            GUI.DrawTexture(R(fr), CardFrameFor(c.Icon), ScaleMode.StretchToFill);
-            Untint();
+            if (deal >= 1f) CardArt.Glow(c, R(fr), a, hot);
+            CardArt.Frame(c, R(fr), a, back);
             if (deal < 1f) return;
 
-            float x = rr.x, y = rr.y;
-            float sc = w / CardW;
             if (bare)
             {
                 // Shrinking into the upgrade row: just the emblem on the frame, no text.
-                Icon(IconFor(c.Icon), x + w * 0.2f, y + h * 0.2f, w * 0.6f, w * 0.6f, alpha);
+                Icon(IconFor(c.Icon), rr.x + w * 0.2f, rr.y + h * 0.2f, w * 0.6f, w * 0.6f, alpha);
                 return;
             }
-            Icon(c.Rare ? ArcaneSkin.GemRare : ArcaneSkin.GemCommon, x + w * 0.5f - 15 * sc, y + 3 * sc, 30 * sc, 30 * sc, alpha);
-            float es = 118 * sc;
-            Icon(IconFor(c.Icon), x + (w - es) * 0.5f, y + h * 0.17f, es, es, alpha);
-            float ts = c.Title.Length > 15 ? 17 : c.Title.Length > 11 ? 20 : 23;
-            Txt(x + w * 0.1f, y + h * 0.5f, w * 0.8f, h * 0.115f, c.Title, ts * sc, new Color(UIStyle.Parchment.r, UIStyle.Parchment.g, UIStyle.Parchment.b, alpha), TextAnchor.MiddleCenter, true);
-            Txt(x + w * 0.08f, y + h * 0.635f, w * 0.84f, h * 0.05f, c.Tag, 14 * sc, new Color(c.Color.r, c.Color.g, c.Color.b, alpha), TextAnchor.MiddleCenter, false, true);
-            Txt(x + w * 0.12f, y + h * 0.69f, w * 0.76f, h * 0.2f, c.Text, 17 * sc, new Color(UIStyle.Parchment.r, UIStyle.Parchment.g, UIStyle.Parchment.b, alpha), TextAnchor.UpperCenter, false, false, true);
-            Txt(x + w * 0.03f, y + h * 0.03f, 26, 22, (index + 1).ToString(), 15 * sc, new Color(UIStyle.Muted.r, UIStyle.Muted.g, UIStyle.Muted.b, alpha * 0.8f), TextAnchor.MiddleCenter, true);
+            CardArt.Face(c, R(rr), alpha, index);
         }
 
         /// <summary>Picks card <paramref name="i"/>: starts the pop / fade / fly animation and hands the card to the wave manager.</summary>
@@ -868,45 +878,132 @@ namespace DungeonConveyor
             }
         }
 
+        /// <summary>
+        /// Map cleared: the map's tally, then the shop, where crystals banked this run unlock new buildings (prices and
+        /// availability in RunSettings), then on to the next map. Gold, upgrades and unlocks carry over.
+        /// </summary>
         void DrawStageCleared()
         {
             Dim();
-            const float w = 620, h = 430;
-            float x = (vw - w) * 0.5f, y = (vh - h) * 0.5f + 20;
+            var items = ShopItems();
+            const float cellW = 200, cellH = 188;
+            int cols = Mathf.Min(5, UIStyle.CellsThatFit(vw - 160, cellW, 0f)); // as many as the screen holds, up to 5
+            int rows = Mathf.Max(1, (items.Count + cols - 1) / cols);
+            float w = Mathf.Min(vw - 40, Mathf.Max(760, cols * cellW + 120)), h = 262 + rows * cellH + 112;
+            float x = (vw - w) * 0.5f, y = Mathf.Max(60, (vh - h) * 0.5f + 20);
             float age = screenT;
             float sc = Mathf.Lerp(0.9f, 1f, HudFx.OutBack(age / 0.3f)), al = Mathf.Clamp01(age / 0.15f);
             var old = GUI.matrix;
             GUIUtility.ScaleAroundPivot(Vector2.one * sc, new Vector2(vw * 0.5f * s, (y + h * 0.5f) * s));
             GUI.color = new Color(1f, 1f, 1f, al);
             Panel(x, y, w, h);
-            if (Skin) UIStyle.Nine(R(x + 30, y - 34, w - 60, 90), ArcaneSkin.Banner, s);
+            if (Skin) UIStyle.Nine(R(x + w * 0.5f - 310, y - 34, 620, 90), ArcaneSkin.Banner, s);
             Untint();
-            Txt(x + 30, y - 34, w - 60, 90, $"MAP {Run.Stage + 1} CLEARED", 38, UIStyle.Accent, TextAnchor.MiddleCenter, true);
+            Txt(x + w * 0.5f - 310, y - 34, 620, 90, $"MAP {Run.Stage + 1} CLEARED", 38, UIStyle.Accent, TextAnchor.MiddleCenter, true);
 
-            string[] labels = { "KILLS", "GOLD", "UPGRADES" };
-            int[] vals = { HudFx.CountUp(waves.Kills, age, 0.3f, 0.7f), HudFx.CountUp(build.Gold, age, 0.45f, 0.7f), HudFx.CountUp(Run.Taken.Count, age, 0.6f, 0.5f) };
-            float cw = (w - 100) / 3f;
-            for (int i = 0; i < 3; i++)
+            string[] labels = { "KILLS", "GOLD", "UPGRADES", "CRYSTALS" };
+            int[] vals =
             {
-                TxtC(x + 50 + i * cw, y + 82, cw, 22, labels[i], 16, UIStyle.Muted, false, true);
-                TxtC(x + 50 + i * cw, y + 104, cw, 44, vals[i].ToString("N0"), 36, i == 1 ? UIStyle.GoldColor : UIStyle.Parchment, true);
+                HudFx.CountUp(waves.Kills, age, 0.3f, 0.7f), HudFx.CountUp(build.Gold, age, 0.45f, 0.7f),
+                HudFx.CountUp(Run.Taken.Count, age, 0.6f, 0.5f), HudFx.CountUp(Run.Crystals, age, 0.75f, 0.7f),
+            };
+            Color[] colors = { UIStyle.Parchment, UIStyle.GoldColor, UIStyle.Parchment, new Color(0.6f, 0.85f, 1f) };
+            // Stats share the row with the stamp on the right, so they never run under it.
+            var statsRow = new Rect(x + 40, y + 70, w - 300, 70);
+            for (int i = 0; i < 4; i++)
+            {
+                var col = UIStyle.Column(statsRow, i, 4, 8);
+                TxtC(col.x, col.y, col.width, 22, labels[i], 16, UIStyle.Muted, false, true);
+                TxtC(col.x, col.y + 22, col.width, 44, vals[i].ToString("N0"), 34, colors[i], true);
             }
-            TxtC(x + 40, y + 160, w - 80, 36, "Your gold and every upgrade carry over to the next map.", 19, UIStyle.Parchment, false, false, true);
+            TxtC(x + 40, y + 142, w - 80, 30, "Your gold, upgrades and unlocked buildings carry over to the next map.", 18, UIStyle.Parchment, false, false, true);
 
             if (age > 1.1f)
             {
                 float t = HudFx.OutBack((age - 1.1f) / 0.3f);
-                var piv = new Vector2((x + w * 0.5f) * s, (y + 224) * s);
+                var piv = new Vector2((x + w - 140) * s, (y + 100) * s);
                 var m2 = GUI.matrix;
                 GUIUtility.RotateAroundPivot(-9f, piv);
                 GUIUtility.ScaleAroundPivot(Vector2.one * Mathf.Lerp(1.8f, 1f, t), piv);
                 string stamp = waves.Leaked == 0 ? "FLAWLESS" : "CLEARED";
-                TxtC(x + w * 0.5f - 130, y + 200, 260, 48, stamp, 34, UIStyle.GoldColor, true);
+                TxtC(x + w - 250, y + 76, 220, 48, stamp, 30, UIStyle.GoldColor, true);
                 GUI.matrix = m2;
             }
-            if (GemButton(x + w * 0.5f - 130, y + 266, 260, 56, "NEXT MAP", 24, true, true)) NextMap();
-            TxtC(x, y + 334, w, 24, "or press Space / Enter", 16, UIStyle.Muted);
+
+            // Shop.
+            // Header row: title left, balance right, the explanation in what's left between them.
+            float shopY = y + 188;
+            var header = new Rect(x + 60, shopY, w - 120, 40);
+            Txt(header.x, header.y, 100, header.height, "SHOP", 30, UIStyle.Accent, TextAnchor.MiddleLeft, true);
+            Txt(header.xMax - 240, header.y, 240, header.height, $"{Run.Crystals:N0} crystals", 24, new Color(0.6f, 0.85f, 1f), TextAnchor.MiddleRight, true);
+            Txt(header.x + 110, header.y + 4, header.width - 360, 36, "Spend crystals to unlock buildings for the rest of the run.", 17, UIStyle.Muted, TextAnchor.MiddleLeft, false, true);
+            if (items.Count == 0)
+                TxtC(x, shopY + 60, w, 40, "Every building is unlocked.", 20, UIStyle.Parchment);
+
+            float gx = x + (w - cols * cellW) * 0.5f, gy = shopY + 56;
+            BuildingCatalog.Entry hovered = null;
+            Rect hoveredCell = default;
+            for (int i = 0; i < items.Count; i++)
+            {
+                var (e, item) = items[i];
+                float cx = gx + (i % cols) * cellW, cy = gy + (i / cols) * cellH;
+                if (ShopCell(e, item, cx, cy, cellW, cellH)) { hovered = e; hoveredCell = new Rect(cx, cy, cellW, cellH); }
+            }
+
+            float by = y + h - 96;
+            if (GemButton(x + w * 0.5f - 130, by, 260, 56, "NEXT MAP", 24, true, true)) NextMap();
+            TxtC(x, by + 60, w, 24, "or press Space / Enter", 16, UIStyle.Muted);
             GUI.matrix = old;
+            if (hovered != null) DrawTooltip(hovered, hoveredCell.x, hoveredCell.y - 6);
+        }
+
+        /// <summary>Every buyable building outside the starting set, cheapest first, with its shop entry.</summary>
+        List<(BuildingCatalog.Entry, RunSettings.ShopItem)> ShopItems()
+        {
+            var list = new List<(BuildingCatalog.Entry, RunSettings.ShopItem)>();
+            if (build.Catalog == null) return list;
+            var settings = RunSettings.Instance;
+            foreach (var e in build.Catalog.Entries)
+                if (e.Purchasable && !settings.StartingBuildings.Contains(e.Id)) list.Add((e, settings.ShopEntry(e.Id)));
+            list.Sort((a, b) => a.Item2.AvailableAfterMap != b.Item2.AvailableAfterMap
+                ? a.Item2.AvailableAfterMap.CompareTo(b.Item2.AvailableAfterMap) : a.Item2.Crystals.CompareTo(b.Item2.Crystals));
+            return list;
+        }
+
+        /// <summary>One shop slot: icon, name, price and its unlock button (or owned / not yet available). True if hovered.</summary>
+        bool ShopCell(BuildingCatalog.Entry e, RunSettings.ShopItem item, float x, float y, float w, float h)
+        {
+            const float slot = 92;
+            bool owned = Run.IsUnlocked(e.Id);
+            bool available = Run.Stage + 1 >= item.AvailableAfterMap;
+            bool afford = Run.Crystals >= item.Crystals;
+            float sx = x + (w - slot) * 0.5f, sy = y + 4;
+            var slotRect = R(sx, sy, slot, slot);
+            bool over = R(x, y, w, h).Contains(Event.current.mousePosition);
+            if (Event.current.type == EventType.Repaint)
+            {
+                if (Skin) UIStyle.Nine(slotRect, owned || over ? ArcaneSkin.SlotHover : ArcaneSkin.Slot, s);
+                else GUI.Box(slotRect, GUIContent.none, owned ? UIStyle.CardActive : UIStyle.Card);
+                if (owned)
+                {
+                    GUI.color = new Color(0.35f, 0.9f, 0.4f, 0.6f);
+                    UIStyle.GlowRing(slotRect, s, 10f);
+                    Untint();
+                }
+            }
+            Tint(owned || (available && afford) ? 1f : 0.45f);
+            if (e.Sprite != null && Event.current.type == EventType.Repaint)
+                GUI.DrawTexture(R(sx + 10, sy + 8, slot - 20, slot - 20), e.Sprite.texture, ScaleMode.ScaleToFit);
+            Untint();
+            TxtC(x, sy + slot + 2, w, 24, e.Name, 18, owned ? UIStyle.Parchment : UIStyle.Muted, false, true);
+
+            float ry = sy + slot + 30;
+            if (owned) TxtC(x, ry, w, 46, "UNLOCKED", 18, new Color(0.4f, 0.9f, 0.45f), true);
+            else if (!available) TxtC(x, ry, w, 46, $"After map {item.AvailableAfterMap}", 17, UIStyle.Muted, false, true);
+            else if (GemButton(x + 22, ry, w - 44, 46, $"{item.Crystals:N0}", 20, afford, afford) && Run.TryUnlock(e.Id))
+                glint[e] = 0f;
+            if (!owned && available && Skin) Icon(ArcaneSkin.GemRare, x + 32, ry + 11, 24, 24, afford ? 1f : 0.45f);
+            return over;
         }
 
         void DrawPlacementHint()
@@ -918,9 +1015,9 @@ namespace DungeonConveyor
             Frame(x, y, w, h, ArcaneSkin.Banner);
             TxtC(x + 80, y + 8, w - 160, 30, "Placing: " + e.Name, 21, UIStyle.Accent, true);
             string hint = build.BlockedReason != null ? build.BlockedReason
-                : !build.CapturesLeftDrag ? "Left click to build  ·  Right click / Esc to cancel"
-                : e.Id == BuildingCatalog.WallId ? "Drag to build a wall line  ·  Hold right click to clear  ·  Esc to cancel"
-                : "Drag to lay a belt (onto a belt to join it)  ·  Hold right click to clear  ·  Esc";
+                : !build.CapturesLeftDrag ? "Left-click to build  ·  Right-click or Esc to cancel"
+                : e.Id == BuildingCatalog.WallId ? "Drag to build a wall line  ·  Hold right-click to clear  ·  Esc to cancel"
+                : "Drag to lay a belt (end on a belt to join it)  ·  Hold right-click to clear  ·  Esc to cancel";
             TxtC(x + 80, y + 38, w - 160, 26, hint, 16, build.BlockedReason != null ? UIStyle.Danger : UIStyle.Parchment, false, true);
         }
 
@@ -936,7 +1033,7 @@ namespace DungeonConveyor
                 int left = 0;
                 foreach (var p in m.Patches) left += p.Remaining;
                 title = m.Def.Name;
-                body = left > 0 ? $"{left} crystals left to dig" : "Ore used up";
+                body = left > 0 ? $"{left} {(left == 1 ? "crystal" : "crystals")} left to dig" : "Ore used up";
             }
             else if (b is Refiner r)
             {
@@ -957,7 +1054,7 @@ namespace DungeonConveyor
             }
             if (title == null) return;
 
-            float w = Mathf.Clamp(St(15, false, true, false, TextAnchor.MiddleLeft).CalcSize(new GUIContent(body)).x / s + 190, 420, 760), h = 76;
+            float w = Mathf.Min(Mathf.Clamp(St(15, false, true, false, TextAnchor.MiddleLeft).CalcSize(new GUIContent(body)).x / s + 190, 420, 760), vw - 24), h = 76;
             float x = vw - w - 12, y = 92;
             Frame(x, y, w, h, ArcaneSkin.Banner);
             TxtC(x + 80, y + 8, w - 160, 28, title, 20, UIStyle.Accent, true);
@@ -973,11 +1070,11 @@ namespace DungeonConveyor
 
             shown.Clear();
             foreach (var e in build.Catalog.Entries)
-                if (e.Purchasable && e.Category == tab) shown.Add(e);
+                if (e.Purchasable && e.Category == tab && Run.IsUnlocked(e.Id)) shown.Add(e);
             float w = pad * 2 + Mathf.Max(3, shown.Count) * cell;
             Panel(x, y, w, panelH);
             if (shown.Count == 0)
-                Txt(x + pad + 8, y + 40, cell * 3, 40, "Nothing here yet", 18, UIStyle.Muted);
+                Txt(x + pad + 8, y + 40, cell * 3, 80, "Nothing here yet.\nUnlock buildings in the shop after each map.", 17, UIStyle.Muted, TextAnchor.MiddleLeft, false, false, true);
 
             // Tabs sit on the panel's top edge.
             for (int i = 0; i < Tabs.Length; i++)
@@ -1052,27 +1149,25 @@ namespace DungeonConveyor
         void DrawTooltip(BuildingCatalog.Entry e, float x, float bottom)
         {
             string stats = e.Attack != AttackKind.None ? Stats(e) : null;
-            string rules = e.NeedsConveyor ? $"Must be placed within {build.ConveyorReach} tiles of a conveyor." : e.NeedsOre ? "Must be placed on ore." : null;
-            string desc = e.Description + "\nRight click to remove; hold and drag to clear belts and walls.";
+            string rules = e.NeedsOre ? "Must be placed on ore." : null;
+            string desc = e.Description + "\nRight-click to remove it; hold and drag to clear belts and walls.";
             const float w = 480, pad = 34;
-            float dh = St(16, false, false, true, TextAnchor.UpperLeft).CalcHeight(new GUIContent(desc), (w - 2 * pad) * s) / s;
-            float h = pad + 34 + (stats != null ? 26 : 0) + (rules != null ? 24 : 0) + dh + pad - 4;
-            float y = bottom - h;
-            Panel(x, y, w, h);
-            Txt(x + pad, y + pad - 6, w - 2 * pad, 30, e.Name, 22, UIStyle.Accent, TextAnchor.MiddleLeft, true);
-            Txt(x + pad, y + pad - 6, w - 2 * pad, 30, $"{e.Size.x}x{e.Size.y}", 16, UIStyle.Muted, TextAnchor.MiddleRight);
-            float ty = y + pad + 30;
-            if (stats != null)
-            {
-                Txt(x + pad, ty, w - 2 * pad, 24, stats, 16, UIStyle.Accent, TextAnchor.MiddleLeft, false, true);
-                ty += 26;
-            }
-            if (rules != null)
-            {
-                Txt(x + pad, ty, w - 2 * pad, 22, rules, 16, new Color(0.6f, 0.8f, 1f), TextAnchor.MiddleLeft, false, true);
-                ty += 24;
-            }
-            Txt(x + pad, ty + 2, w - 2 * pad, dh + 4, desc, 16, UIStyle.Parchment, TextAnchor.UpperLeft, false, false, true);
+            float inner = w - 2 * pad;
+            // Each block is measured at the panel's inner width, so the panel grows to hold all of it.
+            float H(string text, bool bold) => text == null ? 0f : St(16, false, bold, true, TextAnchor.UpperLeft).CalcHeight(new GUIContent(text), inner * s) / s + 4;
+            float sh = H(stats, true), rh = H(rules, true), dh = H(desc, false);
+            float h = pad + 32 + sh + rh + dh + pad - 4;
+            var box = UIStyle.ClampInside(new Rect(x, bottom - h, w, h), new Rect(8, 8, vw - 16, vh - 16));
+            Panel(box.x, box.y, box.width, box.height);
+            var area = UIStyle.Inset(box, pad);
+            area.y -= 6;
+            var head = UIStyle.TakeTop(ref area, 30, 2);
+            Txt(head.x, head.y, head.width - 50, head.height, e.Name, 22, UIStyle.Accent, TextAnchor.MiddleLeft, true);
+            Txt(head.x, head.y, head.width, head.height, $"{e.Size.x}x{e.Size.y}", 16, UIStyle.Muted, TextAnchor.MiddleRight);
+            if (stats != null) { var r = UIStyle.TakeTop(ref area, sh); Txt(r.x, r.y, r.width, r.height, stats, 16, UIStyle.Accent, TextAnchor.UpperLeft, false, true, true); }
+            if (rules != null) { var r = UIStyle.TakeTop(ref area, rh); Txt(r.x, r.y, r.width, r.height, rules, 16, new Color(0.6f, 0.8f, 1f), TextAnchor.UpperLeft, false, true, true); }
+            var d = UIStyle.TakeTop(ref area, dh + 6);
+            Txt(d.x, d.y, d.width, d.height, desc, 16, UIStyle.Parchment, TextAnchor.UpperLeft, false, false, true);
         }
 
         /// <summary>Combat stats including the run's upgrades.</summary>
@@ -1132,7 +1227,7 @@ namespace DungeonConveyor
             if (boss)
             {
                 int pct = Pct(waves.BossHealthAtLoss);
-                TxtC(x + 40, by + 4, w - 80, 34, $"The boss had {pct}% health left", 24, UIStyle.Accent, true);
+                TxtC(x + 40, by + 4, w - 80, 34, $"The boss had {pct}% of its health left", 24, UIStyle.Accent, true);
                 by += 44;
             }
             if (GemButton(x + w * 0.5f - 130, y + h - 130, 260, 58, "NEW RUN", 26, true, true)) NewRun();
@@ -1181,8 +1276,11 @@ namespace DungeonConveyor
             const float w = 320, pad = 30;
             float dh = St(16, false, false, true, TextAnchor.UpperLeft).CalcHeight(new GUIContent(tipBody), (w - 2 * pad) * s) / s;
             float h = pad + 26 + 22 + dh + pad - 4;
-            float x = tipAnchor.xMax + 12, y = Mathf.Min(tipAnchor.y, vh - h - 12);
+            float x = tipAnchor.xMax + 12;
             if (x + w > vw - 8) x = tipAnchor.x - w - 12;
+            var box = UIStyle.ClampInside(new Rect(x, tipAnchor.y, w, h), new Rect(8, 8, vw - 16, vh - 16));
+            x = box.x;
+            float y = box.y;
             Panel(x, y, w, h);
             Txt(x + pad, y + pad - 8, w - 2 * pad, 26, tipTitle, 19, UIStyle.Accent, TextAnchor.MiddleLeft, true);
             if (!string.IsNullOrEmpty(tipTag)) Txt(x + pad, y + pad + 16, w - 2 * pad, 20, tipTag, 14, UIStyle.Muted, TextAnchor.MiddleLeft, false, true);

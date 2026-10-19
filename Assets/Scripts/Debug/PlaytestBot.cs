@@ -110,6 +110,7 @@ namespace DungeonConveyor
             DescribeMap();
             GameSpeed.Speed = speed;
             waves.AutoPickCards = true;
+            Run.UnlockAll(build.Catalog); // the bot tests every building, shop or not
 
             WallTests();
             WallLineTest();
@@ -447,18 +448,17 @@ namespace DungeonConveyor
 
         void CheckRules()
         {
-            // A turret far from any belt must be refused.
+            // Towers no longer need a conveyor nearby: one far from any belt must be placeable somewhere.
             var turret = build.Catalog.Find("Turret");
-            string refusal = null;
-            for (int x = 0; x < map.Width && refusal == null; x++)
-                for (int y = 0; y < map.Height && refusal == null; y++)
+            string spot = null;
+            for (int x = 0; x < map.Width && spot == null; x++)
+                for (int y = 0; y < map.Height && spot == null; y++)
                 {
                     var c = new Vector2Int(x, y);
-                    if (!BeltFree(c, null) || NearBelt(c, build.ConveyorReach + Mathf.Max(turret.Size.x, turret.Size.y))) continue;
-                    build.CanPlace(turret, c, out _, out var reason);
-                    if (reason != null && reason.Contains("conveyor")) refusal = $"{c}: \"{reason}\"";
+                    if (!BeltFree(c, null) || NearBelt(c, 4 + Mathf.Max(turret.Size.x, turret.Size.y))) continue;
+                    if (build.CanPlace(turret, c, out _, out _)) spot = c.ToString();
                 }
-            Check($"towers need a conveyor within {build.ConveyorReach} tiles", refusal != null, refusal ?? "no refusal found");
+            Check("towers can be placed away from conveyors", spot != null, spot ?? "no free spot away from belts accepted a turret");
         }
 
         bool NearBelt(Vector2Int c, int r)

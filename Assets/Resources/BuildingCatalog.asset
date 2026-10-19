@@ -12,11 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 36bf259524f00984ea4ba2f8100a6044, type: 3}
   m_Name: BuildingCatalog
   m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.BuildingCatalog
+  LiveModels: 1
   AimingHeads: 1
+  DitherLook: 0
+  ScreenDither: 1
   Entries:
   - Id: Core
     Name: Core
-    Model: {fileID: -7517853189988344250, guid: 5c9a0e476be1ab54f8bb10a6d4c7316a, type: 3}
+    Model: {fileID: 4582903957824579004, guid: 8cdf702435535a2489c9c48cb4adabd5, type: 3}
     Category: 0
     Cost: 0
     Size: {x: 4, y: 4}
@@ -30,7 +33,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Conveyor
     Name: Conveyor
-    Model: {fileID: 188925187561463615, guid: da883e171a26e9a40b58554e3b2686dd, type: 3}
+    Model: {fileID: 3347485748093225692, guid: e31cbbbc938b33e4a867dd4ef0646ef4, type: 3}
     Category: 1
     Cost: 10
     Size: {x: 2, y: 1}
@@ -44,7 +47,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Wall
     Name: Wall
-    Model: {fileID: 6780845749958460538, guid: e3e2e0e238cf54a48a4400f23b2ba710, type: 3}
+    Model: {fileID: 1155029191483821383, guid: 1f9a62c89a40e4d42931ac4b0434f3c3, type: 3}
     Category: 0
     Cost: 25
     Size: {x: 1, y: 1}
@@ -58,7 +61,7 @@ MonoBehaviour:
     Splash: 0
   - Id: LandMine
     Name: Land Mine
-    Model: {fileID: -6493052282944581010, guid: 78bb3b1ca7e68db4c89da2cc64136172, type: 3}
+    Model: {fileID: 2343414072350731776, guid: 7b96ea952c906c0409fcc98bf750c888, type: 3}
     Category: 0
     Cost: 40
     Size: {x: 1, y: 1}
@@ -73,7 +76,7 @@ MonoBehaviour:
     Splash: 1.6
   - Id: Splitter
     Name: Splitter
-    Model: {fileID: -6578007703932759359, guid: 7ef3065172e6820469aadc4ea897ec7f, type: 3}
+    Model: {fileID: 7750255210326389881, guid: 8ccff9518dd0ce34490fd7eca5b667f2, type: 3}
     Category: 1
     Cost: 60
     Size: {x: 2, y: 2}
@@ -88,7 +91,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Miner
     Name: Miner
-    Model: {fileID: 1678460109524132916, guid: 2b00b6d884ad8854abf78770d6026a71, type: 3}
+    Model: {fileID: 5384649223750054386, guid: cd0593bf7be4f0748a8dd6265cab450b, type: 3}
     Category: 2
     Cost: 120
     Size: {x: 2, y: 2}
@@ -102,7 +105,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Turret
     Name: Turret
-    Model: {fileID: 1591986052438885169, guid: 2a0542c23cb8c4e40bfbef70382f834c, type: 3}
+    Model: {fileID: 7085434414575253604, guid: c6f4b4d0a64d5d7459b6214a7a3787ff, type: 3}
     Category: 0
     Cost: 150
     Size: {x: 1, y: 1}
@@ -116,7 +119,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Collector
     Name: Refiner
-    Model: {fileID: -6716511680544242210, guid: 9ec2c8324fb8e954d82373c3efaa1781, type: 3}
+    Model: {fileID: 3417425884649039159, guid: 54233de66562e924083cbb5c6822318e, type: 3}
     Category: 1
     Cost: 250
     Size: {x: 1, y: 1}
@@ -131,7 +134,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Flamethrower
     Name: Flamethrower
-    Model: {fileID: -583922145332642893, guid: 98a8f8dc2cb0d484fb7e2ad8a39c21d8, type: 3}
+    Model: {fileID: 5951393177478112768, guid: a121ee1295d1d084aa36232efab12469, type: 3}
     Category: 0
     Cost: 250
     Size: {x: 1, y: 1}
@@ -145,7 +148,7 @@ MonoBehaviour:
     Splash: 0
   - Id: Mortar
     Name: Mortar
-    Model: {fileID: 3937881024602784944, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+    Model: {fileID: 8294714720558780619, guid: aec3f0334046e264fba663c8d660e4b0, type: 3}
     Category: 0
     Cost: 280
     Size: {x: 1, y: 1}
@@ -159,7 +162,7 @@ MonoBehaviour:
     Splash: 1.6
   - Id: LaserTower
     Name: Laser Tower
-    Model: {fileID: 7267373001924231959, guid: 0f4e20bbbc16d6d449a8f259780baf0b, type: 3}
+    Model: {fileID: 455612195435435907, guid: f4743c4a264b58d4fa027b6c3a1dad21, type: 3}
     Category: 0
     Cost: 300
     Size: {x: 1, y: 1}
@@ -173,7 +176,7 @@ MonoBehaviour:
     Splash: 0
   - Id: MineShaft
     Name: Mine Shaft
-    Model: {fileID: -7124118177044448163, guid: d4bf96f8ca1e46d47800db38fb7783c7, type: 3}
+    Model: {fileID: 2980389436742287153, guid: eea673a54af2b954f99b5a47efe88b75, type: 3}
     Category: 2
     Cost: 300
     Size: {x: 2, y: 2}
@@ -187,7 +190,7 @@ MonoBehaviour:
     Splash: 0
   - Id: MissileLauncher
     Name: Missile Launcher
-    Model: {fileID: -4118408284839408809, guid: 2a893bdbb6039be428ccf440ffe4f29e, type: 3}
+    Model: {fileID: 5483171133511594016, guid: 1066280b43cac4d458ca70893b350db7, type: 3}
     Category: 0
     Cost: 350
     Size: {x: 1, y: 1}
@@ -201,7 +204,7 @@ MonoBehaviour:
     Splash: 1.2
   - Id: TeslaCoil
     Name: Tesla Coil
-    Model: {fileID: 8909428289235959629, guid: bf0ed29a234f14b49b08a8f17954a3b8, type: 3}
+    Model: {fileID: 3558641073966984812, guid: d854dd6bf20f207449a33e8b68f2a47d, type: 3}
     Category: 0
     Cost: 400
     Size: {x: 1, y: 1}
@@ -215,7 +218,7 @@ MonoBehaviour:
     Splash: 4
   - Id: ShieldGenerator
     Name: Shield Generator
-    Model: {fileID: -6411412176600960630, guid: 05869a60df8a2574a90a7319ecae8544, type: 3}
+    Model: {fileID: 972210055749067409, guid: 4a045e7c6a95ba24ba5009f8c13a4b4a, type: 3}
     Category: 0
     Cost: 450
     Size: {x: 2, y: 2}

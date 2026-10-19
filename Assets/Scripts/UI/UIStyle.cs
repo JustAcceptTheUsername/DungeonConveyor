@@ -134,6 +134,69 @@ namespace DungeonConveyor
             GUI.color = old;
         }
 
+        // ---------------------------------------------------------------- fitting and layout
+
+        /// <summary>
+        /// Largest font size, from the style's own down to minFraction of it, at which the text fits the rect: its
+        /// width for single-line styles, its wrapped height for word-wrapping ones. The style is left unchanged.
+        /// </summary>
+        public static int FitFontSize(GUIStyle g, string text, Rect r, float minFraction = 0.5f)
+        {
+            int orig = g.fontSize;
+            if (string.IsNullOrEmpty(text) || orig <= 0) return orig;
+            int min = Mathf.Max(6, Mathf.RoundToInt(orig * minFraction));
+            var content = new GUIContent(text);
+            int size = orig;
+            for (; size > min; size--)
+            {
+                g.fontSize = size;
+                bool fits = g.wordWrap ? g.CalcHeight(content, r.width) <= r.height + 1f : g.CalcSize(content).x <= r.width + 1f;
+                if (fits) break;
+            }
+            g.fontSize = orig;
+            return size;
+        }
+
+        /// <summary>The rect shrunk by pad on every side.</summary>
+        public static Rect Inset(Rect r, float pad) => new Rect(r.x + pad, r.y + pad, Mathf.Max(0f, r.width - 2f * pad), Mathf.Max(0f, r.height - 2f * pad));
+
+        /// <summary>The child moved (and if needed shrunk) so it lies inside the parent.</summary>
+        public static Rect ClampInside(Rect child, Rect parent)
+        {
+            float w = Mathf.Min(child.width, parent.width), h = Mathf.Min(child.height, parent.height);
+            float x = Mathf.Clamp(child.x, parent.x, parent.xMax - w), y = Mathf.Clamp(child.y, parent.y, parent.yMax - h);
+            return new Rect(x, y, w, h);
+        }
+
+        /// <summary>Takes a strip of the given height off the top of area (plus gap below it) and returns the strip.</summary>
+        public static Rect TakeTop(ref Rect area, float height, float gap = 0f)
+        {
+            height = Mathf.Min(height, area.height);
+            var strip = new Rect(area.x, area.y, area.width, height);
+            float used = Mathf.Min(area.height, height + gap);
+            area = new Rect(area.x, area.y + used, area.width, area.height - used);
+            return strip;
+        }
+
+        /// <summary>Takes a strip of the given height off the bottom of area (plus gap above it) and returns the strip.</summary>
+        public static Rect TakeBottom(ref Rect area, float height, float gap = 0f)
+        {
+            height = Mathf.Min(height, area.height);
+            var strip = new Rect(area.x, area.yMax - height, area.width, height);
+            area = new Rect(area.x, area.y, area.width, Mathf.Max(0f, area.height - height - gap));
+            return strip;
+        }
+
+        /// <summary>Column i of n equal columns across r with gaps between them.</summary>
+        public static Rect Column(Rect r, int i, int n, float gap = 0f)
+        {
+            float w = (r.width - gap * (n - 1)) / n;
+            return new Rect(r.x + i * (w + gap), r.y, w, r.height);
+        }
+
+        /// <summary>How many cells of the given width (with gaps) fit across a width; at least 1.</summary>
+        public static int CellsThatFit(float width, float cell, float gap) => Mathf.Max(1, Mathf.FloorToInt((width + gap) / (cell + gap)));
+
         public static void Shadowed(Rect r, string text, GUIStyle style, Color color)
         {
             var old = style.normal.textColor;

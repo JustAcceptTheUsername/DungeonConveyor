@@ -61,7 +61,7 @@ namespace DungeonConveyor.EditorTools
                 var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
                 if (go == null) continue;
                 var id = Path.GetFileNameWithoutExtension(path);
-                if (!models.ContainsKey(id) || ext == ".glb" || ext == ".gltf") models[id] = go;
+                if (!models.ContainsKey(id) || ext == ".glb" || ext == ".gltf") models[id] = ModelPrefabs.Prefer(path, go);
             }
 
             bool changed = catalog.Entries.RemoveAll(e => e == null || !models.ContainsKey(e.Id)) > 0;

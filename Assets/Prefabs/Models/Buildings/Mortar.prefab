@@ -1,0 +1,165 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &4621203769527730596
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1571586229236382313}
+  m_Layer: 0
+  m_Name: Muzzle
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1571586229236382313
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4621203769527730596}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.3265056, y: -0.6272114, z: -0.3265056, w: 0.6272114}
+  m_LocalPosition: {x: -0.2, y: 0.77, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 7385051666334745443}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &6757623700165125845
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2226529092530340814}
+  m_Layer: 0
+  m_Name: EffectOrigin
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2226529092530340814
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6757623700165125845}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.29, y: 0.881, z: -0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1744038967532845014}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &5024494338112967803
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -21424420504649247, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3937881024602784944, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      propertyPath: m_Name
+      value: Mortar
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 2577870596090451736, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1571586229236382313}
+    - targetCorrespondingSourceObject: {fileID: 6741471693611770797, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2226529092530340814}
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 3937881024602784944, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6884566854953140038}
+  m_SourcePrefab: {fileID: -8509780790244613930, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+--- !u!4 &1744038967532845014 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6741471693611770797, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+  m_PrefabInstance: {fileID: 5024494338112967803}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &7385051666334745443 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2577870596090451736, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+  m_PrefabInstance: {fileID: 5024494338112967803}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &8294714720558780619 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 3937881024602784944, guid: f0c4994874005d8449edeb4301bb3735, type: 3}
+  m_PrefabInstance: {fileID: 5024494338112967803}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &6884566854953140038
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8294714720558780619}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b7fc73007d3e3c4a8769550c76f907b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.BuildingFx
+  Muzzles:
+  - {fileID: 1571586229236382313}
+  FireEffect: {fileID: 7480785587936582546, guid: 31a63ea5f4492c94abe7a824c7d449b3, type: 3}
+  DetachFireEffect: 0
+  DetachedLifetime: 4
+  LoopEffect: {fileID: 0}
+  LoopPoint: {fileID: 0}
+  LoopAlways: 0

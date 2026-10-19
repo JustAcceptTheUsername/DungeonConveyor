@@ -61,8 +61,6 @@ namespace DungeonConveyor
             [System.NonSerialized] public Sprite[] HeadSprites;
 
             public bool NeedsOre => Category == BuildCategory.Mining;
-            /// <summary>Towers that shoot (or project a field) must stand next to a conveyor.</summary>
-            public bool NeedsConveyor => Attack != AttackKind.None && Attack != AttackKind.Mine;
             /// <summary>Enemies walk over belts and mines; everything else is in their way.</summary>
             public bool BlocksEnemies => Id != ConveyorId && Attack != AttackKind.Mine;
         }

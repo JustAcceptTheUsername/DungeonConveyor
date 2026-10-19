@@ -13,6 +13,8 @@ namespace DungeonConveyor
         public SpriteRenderer Renderer { get; private set; }
         /// <summary>The live 3D model instance, if it has one.</summary>
         public GameObject Model { get; private set; }
+        /// <summary>The live model's particle effects, if its prefab has any (see BuildingFx).</summary>
+        public BuildingFx Effects { get; private set; }
 
         public bool IsCore => Def != null && Def.Id == BuildingCatalog.CoreId;
         public Vector2Int Size => this is Conveyor ? Vector2Int.one : Def.Size;
@@ -33,6 +35,20 @@ namespace DungeonConveyor
             if (Def.Model == null) return;
             Model = BuildingModels.Spawn(map, Def.Model, GridCenter, Level, Vector3.one * Def.Scale, 0f, Renderer.sortingOrder, transform);
             Renderer.forceRenderingOff = true; // keeps its bounds and pixels for clicking and rock fading
+            Effects = Model.GetComponent<BuildingFx>();
+            if (Effects != null) Effects.Init(Renderer.sortingOrder);
+        }
+
+        /// <summary>Starts or stops the building's working effect, if it has one.</summary>
+        public void SetWorking(bool working)
+        {
+            if (Effects != null) Effects.SetWorking(working);
+        }
+
+        /// <summary>Plays the building's one-off effect, if it has one.</summary>
+        public void PlayEffect()
+        {
+            if (Effects != null) Effects.Fire();
         }
 
         public bool Covers(Vector2Int c) => c.x >= Origin.x && c.y >= Origin.y && c.x < Origin.x + Size.x && c.y < Origin.y + Size.y;

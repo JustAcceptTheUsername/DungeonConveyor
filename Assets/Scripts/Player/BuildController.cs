@@ -13,7 +13,7 @@ namespace DungeonConveyor
     ///   of existing belts, take output from an adjacent miner and feed an adjacent Core.
     /// - Right-click a building to delete it (refunded); hold right-click and sweep to clear belts and walls.
     ///   A right-click that removes nothing, or Esc, stops placing.
-    /// Rules: miners go on ore, shooting towers near a conveyor (ConveyorReach), and nothing may cut the enemies' path to the Core.
+    /// Rules: miners go on ore, towers anywhere else, and nothing may cut the enemies' path to the Core.
     /// </summary>
     [RequireComponent(typeof(IsoGrid))]
     public class BuildController : MonoBehaviour
@@ -21,8 +21,6 @@ namespace DungeonConveyor
         public int StartingGold = 1500;
         [Tooltip("Largest height difference allowed under a building's footprint, and between neighbouring belt tiles.")]
         public int MaxFootprintSlope = 1;
-        [Tooltip("Shooting towers must have a conveyor within this many tiles of their footprint (diagonals count as 1).")]
-        public int ConveyorReach = 3;
         [Range(0f, 1f)] public float RefundFraction = 1f;
         [Tooltip("Belt animation speed in frames per second.")]
         public float BeltFps = 10f;
@@ -116,6 +114,7 @@ namespace DungeonConveyor
 
         public void Select(BuildingCatalog.Entry entry)
         {
+            if (entry != null && !Run.IsUnlocked(entry.Id)) return; // still locked in the shop
             Placing = entry == Placing ? null : entry;
             drawingBelt = false;
         }
@@ -243,7 +242,6 @@ namespace DungeonConveyor
             if (e.NeedsOre && !ore) { reason = "Must be placed on ore"; return false; }
             if (!e.NeedsOre && ore) { reason = "Ore is reserved for mining"; return false; }
             if (hi - lo > MaxFootprintSlope) { reason = "Ground too uneven"; return false; }
-            if (e.NeedsConveyor && !ConveyorNear(origin, e.Size)) { reason = $"Must be within {ConveyorReach} tiles of a conveyor"; return false; }
             if (e.BlocksEnemies)
             {
                 foreach (var enemy in Enemy.All)
@@ -252,15 +250,6 @@ namespace DungeonConveyor
             }
             reason = null;
             return true;
-        }
-
-        /// <summary>Is there a conveyor within ConveyorReach tiles of this footprint?</summary>
-        bool ConveyorNear(Vector2Int origin, Vector2Int size)
-        {
-            for (int x = -ConveyorReach; x < size.x + ConveyorReach; x++)
-                for (int y = -ConveyorReach; y < size.y + ConveyorReach; y++)
-                    if (map.BuildingAt(origin + new Vector2Int(x, y)) is Conveyor) return true;
-            return false;
         }
 
         static bool IsInside(Vector2Int c, Vector2Int origin, Vector2Int size) =>

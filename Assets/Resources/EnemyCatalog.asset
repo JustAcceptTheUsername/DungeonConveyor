@@ -16,7 +16,7 @@ MonoBehaviour:
   Entries:
   - Id: Crawler
     Name: Crawler
-    Model: {fileID: -189797882689187869, guid: 59f9e8fdebdf8a940a450c808b3ad159, type: 3}
+    Model: {fileID: 8253726439795505618, guid: ee776b0e0cf4da046b53db6a1213bb28, type: 3}
     Scale: 0.6
     Health: 40
     Speed: 1.5
@@ -27,7 +27,7 @@ MonoBehaviour:
     Hover: 0
   - Id: CrystalSpider
     Name: Crystal Spider
-    Model: {fileID: -4055828578183838197, guid: 0c2421dbceec3d649a189717400de18e, type: 3}
+    Model: {fileID: 2174832299153047374, guid: a827ecd0dc9427043ae1db5f9279eeac, type: 3}
     Scale: 0.6
     Health: 75
     Speed: 1.25
@@ -38,7 +38,7 @@ MonoBehaviour:
     Hover: 0
   - Id: Wasp
     Name: Wasp
-    Model: {fileID: -6189057522356269762, guid: 56b530911fd667e418986bdee82c360d, type: 3}
+    Model: {fileID: 895827133793382441, guid: 1dcb7811228554e409a8318b8767bd36, type: 3}
     Scale: 0.6
     Health: 32
     Speed: 2.3
@@ -49,7 +49,7 @@ MonoBehaviour:
     Hover: 0.35
   - Id: AcidSpitter
     Name: Acid Spitter
-    Model: {fileID: 4236427390945188737, guid: 7a294356b3ba23440a62eca38f407e2e, type: 3}
+    Model: {fileID: 3610252699757839455, guid: 7e62bffd9e92c0742a0a9635227d9d6a, type: 3}
     Scale: 0.6
     Health: 150
     Speed: 0.95
@@ -60,7 +60,7 @@ MonoBehaviour:
     Hover: 0
   - Id: Brute
     Name: Brute
-    Model: {fileID: -4458627345364876513, guid: d038d2303d0805c4ab9c68b7629c3115, type: 3}
+    Model: {fileID: 1129826029265878889, guid: b9163f07339881241aa510b5e1c15fb3, type: 3}
     Scale: 0.8
     Health: 480
     Speed: 0.7

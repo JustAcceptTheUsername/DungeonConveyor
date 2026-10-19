@@ -1,0 +1,91 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 662387fab90a2814bab3c30527c1d38c, type: 3}
+  m_Name: RunSettings
+  m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.RunSettings
+  WavesPerCard: 5
+  CommonWeight: 62
+  RareWeight: 26
+  EpicWeight: 10
+  LegendaryWeight: 2
+  CommonPower: 1
+  RarePower: 1.6
+  EpicPower: 2.4
+  LegendaryPower: 3.5
+  LuckPerExtraWave: 0.6
+  FortuneLuck: 0.35
+  FortuneShareOfLegendaries: 0.3
+  DefaultDifficulty: 1
+  Difficulties:
+  - Name: Delver
+    Description: A gentle descent. Enemies have 25% less health, and the tougher
+      creatures arrive a little later.
+    HealthMultiplier: 0.75
+    EnemyUnlockShift: -2
+    TougherEnemyBias: 0
+  - Name: Warden
+    Description: The dungeon as intended. Enemies come at full strength, and new
+      creatures appear on schedule.
+    HealthMultiplier: 1
+    EnemyUnlockShift: 0
+    TougherEnemyBias: 0
+  - Name: Overseer
+    Description: For seasoned keepers. Enemies have 35% more health, and tougher
+      creatures arrive 3 waves early and make up more of each wave.
+    HealthMultiplier: 1.35
+    EnemyUnlockShift: 3
+    TougherEnemyBias: 0.5
+  - Name: Abyssal
+    Description: The deep wakes. Enemies have 80% more health, and the worst creatures
+      crawl out 6 waves early and swarm every wave.
+    HealthMultiplier: 1.8
+    EnemyUnlockShift: 6
+    TougherEnemyBias: 1
+  StartingBuildings:
+  - Conveyor
+  - Miner
+  - Turret
+  - Flamethrower
+  Shop:
+  - Id: Wall
+    Crystals: 40
+    AvailableAfterMap: 1
+  - Id: Splitter
+    Crystals: 60
+    AvailableAfterMap: 1
+  - Id: LandMine
+    Crystals: 80
+    AvailableAfterMap: 1
+  - Id: Collector
+    Crystals: 120
+    AvailableAfterMap: 1
+  - Id: Mortar
+    Crystals: 150
+    AvailableAfterMap: 1
+  - Id: LaserTower
+    Crystals: 180
+    AvailableAfterMap: 2
+  - Id: MineShaft
+    Crystals: 200
+    AvailableAfterMap: 2
+  - Id: MissileLauncher
+    Crystals: 220
+    AvailableAfterMap: 2
+  - Id: TeslaCoil
+    Crystals: 260
+    AvailableAfterMap: 3
+  - Id: ShieldGenerator
+    Crystals: 280
+    AvailableAfterMap: 3
+  DefaultShopPrice: 150
+  CrystalsPerItem: 1
+  RefinedCrystalBonus: 1
