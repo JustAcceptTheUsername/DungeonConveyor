@@ -26,6 +26,13 @@ namespace DungeonConveyor.EditorTools
             { "Brute", (480f, 0.7f, 90f, 25, 9, 0.6f, 0f) },
         };
 
+        // New model -> the existing catalog Id it replaces (the Id stays, so waves, saves and stats keep working).
+        // The replaced model's own file is then ignored, so it can stay in the folder without being re-linked.
+        static readonly Dictionary<string, string> Replaces = new Dictionary<string, string>
+        {
+            { "PebbleSkitterer", "Crawler" },
+        };
+
         static EnemyCatalogSync() => EditorApplication.delayCall += Sync;
 
         static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
@@ -61,6 +68,10 @@ namespace DungeonConveyor.EditorTools
                 var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
                 if (go == null) continue;
                 var id = Path.GetFileNameWithoutExtension(path);
+                // Only the folder itself holds enemies (sub-folders are free for non-enemy models).
+                if (Path.GetDirectoryName(path).Replace('\\', '/') != ModelsFolder) continue;
+                if (Replaces.ContainsValue(id)) continue;
+                if (Replaces.TryGetValue(id, out var replaced)) id = replaced;
                 if (!models.ContainsKey(id) || ext == ".glb" || ext == ".gltf") models[id] = ModelPrefabs.Prefer(path, go);
             }
 
@@ -70,7 +81,12 @@ namespace DungeonConveyor.EditorTools
                 var entry = catalog.Entries.Find(e => e.Id == pair.Key);
                 if (entry != null)
                 {
-                    if (entry.Model == null) { entry.Model = pair.Value; changed = true; }
+                    // A replacement model always wins over whatever the entry pointed at before.
+                    if (entry.Model == null || (Replaces.ContainsValue(entry.Id) && entry.Model != pair.Value))
+                    {
+                        entry.Model = pair.Value;
+                        changed = true;
+                    }
                     continue;
                 }
                 var (hp, speed, damage, bounty, wave, weight, hover) = Defaults.TryGetValue(pair.Key, out var d) ? d : (60f, 1.2f, 12f, 4, 3, 1f, 0f);

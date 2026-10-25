@@ -30,11 +30,29 @@ MonoBehaviour:
     ScaleJitter: 0.06
     BobJitter: 0.15
     BarHeight: 0.09
+  RigAnimation: 1
+  Rig:
+    PoseFps: 12
+    Interpolate: 1
+    StrideScale: 1
+    BodyBounce: 1.8
+    BodySquash: 2.2
+    LegSwing: 1.25
+    MeteorShell: {fileID: 480147433252618104, guid: 019f3a32bfee38348b8969e0c63fe4d1, type: 3}
+    ShellSize: 1.5
+    CrackAt: 0.15
+    PopSeconds: 0.35
+    HatchHold: 0.35
+    ShellSeconds: 1
+    CrumbleSeconds: 0.8
+    CrumbleImpulse: 0.55
+    CrumbleSpin: 540
+    CrumbleGravity: 9
   Entries:
   - Id: Crawler
-    Name: Crawler
-    Model: {fileID: 8253726439795505618, guid: ee776b0e0cf4da046b53db6a1213bb28, type: 3}
-    Scale: 0.75
+    Name: Pebble Skitterer
+    Model: {fileID: 8213727283131406042, guid: cf2b4c935949e8949913ef5be9c3563f, type: 3}
+    Scale: 1.2
     Health: 40
     Speed: 1.5
     CoreDamage: 10
@@ -43,6 +61,7 @@ MonoBehaviour:
     Weight: 4
     Hover: 0
     Traits: 1
+    Gait: {fileID: 11400000, guid: ef8daf2f1438e1449aba51ed4f8054e9, type: 2}
   - Id: CrystalSpider
     Name: Crystal Spider
     Model: {fileID: 2174832299153047374, guid: a827ecd0dc9427043ae1db5f9279eeac, type: 3}
@@ -55,6 +74,7 @@ MonoBehaviour:
     Weight: 3
     Hover: 0
     Traits: 8
+    Gait: {fileID: 0}
   - Id: Wasp
     Name: Wasp
     Model: {fileID: 895827133793382441, guid: 1dcb7811228554e409a8318b8767bd36, type: 3}
@@ -67,6 +87,7 @@ MonoBehaviour:
     Weight: 2
     Hover: 0.1
     Traits: 4
+    Gait: {fileID: 0}
   - Id: AcidSpitter
     Name: Acid Spitter
     Model: {fileID: 3610252699757839455, guid: 7e62bffd9e92c0742a0a9635227d9d6a, type: 3}
@@ -79,6 +100,7 @@ MonoBehaviour:
     Weight: 1.5
     Hover: 0
     Traits: 8
+    Gait: {fileID: 0}
   - Id: Brute
     Name: Brute
     Model: {fileID: 1129826029265878889, guid: b9163f07339881241aa510b5e1c15fb3, type: 3}
@@ -91,3 +113,4 @@ MonoBehaviour:
     Weight: 0.6
     Hover: 0
     Traits: 2
+    Gait: {fileID: 0}
