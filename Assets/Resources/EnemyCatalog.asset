@@ -13,6 +13,23 @@ MonoBehaviour:
   m_Name: EnemyCatalog
   m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.EnemyCatalog
   YawOffset: 0
+  EnemyFeedback: 1
+  Feedback:
+    InkColor: {r: 0.106, g: 0.063, b: 0.125, a: 1}
+    InkWidth: 0.018
+    InkMinPixels: 1.5
+    FlashSeconds: 0.065
+    ChipsPerHit: 3
+    CrackAt: {x: 0.66, y: 0.33}
+    CrackScale: 3.5
+    StatusStrength: 1.3
+    DeathSeconds: 0.6
+    ShadowAlpha: 0.6
+    ShadowSize: 1.1
+    ShadowOffset: 0.1
+    ScaleJitter: 0.06
+    BobJitter: 0.15
+    BarHeight: 0.09
   Entries:
   - Id: Crawler
     Name: Crawler
