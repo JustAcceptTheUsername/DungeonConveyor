@@ -134,6 +134,9 @@ namespace DungeonConveyor
             public float ActionAmplitude = 1f;
             [Tooltip("Wing beats of a flier's Fly loop relative to the keyed rate (the loop is time-based, not distance).")]
             public float FlapRate = 1f;
+            [Tooltip("How fast a flier's heading eases round to a new direction (per second; 0 = turns at once, as the " +
+                     "steps do at cell borders). The bank follows this eased turn.")]
+            public float FlyTurnResponse = 6f;
             [Tooltip("Most a flier banks into a turn (degrees).")]
             public float BankMax = 22f;
             [Tooltip("Bank per degree per second of turning.")]

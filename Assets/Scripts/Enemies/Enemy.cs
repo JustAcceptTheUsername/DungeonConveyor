@@ -91,7 +91,7 @@ namespace DungeonConveyor
         EnemyRig rig;
         GameObject model;
         Material spriteMaterial;
-        Vector3 lastGround, lastFacing;
+        Vector3 lastGround, flyFacing; // flyFacing: a flier's eased heading
         bool hasLastGround;
         float hatchHold, jitter = 1f, frameDt, turnRate, bank;
 
@@ -626,16 +626,22 @@ namespace DungeonConveyor
                 var rotation = Quaternion.LookRotation(facing, up);
                 if (rig != null && IsFlying)
                 {
-                    // Fliers bank into their turns.
+                    // Fliers ease round into the new heading (the steps turn sharply at cell borders) and bank by how
+                    // fast that heading turns, so the bank swells and settles instead of coming in pulses.
                     var cfg = EnemyRig.Settings;
-                    if (frameDt > 0f && lastFacing.sqrMagnitude > 0.5f)
+                    flyFacing = Vector3.ProjectOnPlane(flyFacing, up);
+                    if (flyFacing.sqrMagnitude < 1e-6f) flyFacing = facing;
+                    flyFacing.Normalize();
+                    if (frameDt > 0f)
                     {
-                        float turn = Vector3.SignedAngle(lastFacing, facing, up) / frameDt;
+                        var next = cfg.FlyTurnResponse > 0f
+                            ? Vector3.Slerp(flyFacing, facing, 1f - Mathf.Exp(-cfg.FlyTurnResponse * frameDt)) : facing;
+                        float turn = Vector3.SignedAngle(flyFacing, next, up) / frameDt;
+                        flyFacing = next.normalized;
                         turnRate = Mathf.Lerp(turnRate, turn, 1f - Mathf.Exp(-cfg.BankResponse * frameDt));
                         bank = Mathf.Clamp(-turnRate * cfg.BankPerTurn, -cfg.BankMax, cfg.BankMax);
                     }
-                    lastFacing = facing;
-                    rotation *= Quaternion.Euler(0f, 0f, bank);
+                    rotation = Quaternion.LookRotation(flyFacing, up) * Quaternion.Euler(0f, 0f, bank);
                 }
                 body.rotation = rotation;
             }
