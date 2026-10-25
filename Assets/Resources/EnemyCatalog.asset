@@ -34,7 +34,7 @@ MonoBehaviour:
   - Id: Crawler
     Name: Crawler
     Model: {fileID: 8253726439795505618, guid: ee776b0e0cf4da046b53db6a1213bb28, type: 3}
-    Scale: 0.6
+    Scale: 0.75
     Health: 40
     Speed: 1.5
     CoreDamage: 10
@@ -58,14 +58,14 @@ MonoBehaviour:
   - Id: Wasp
     Name: Wasp
     Model: {fileID: 895827133793382441, guid: 1dcb7811228554e409a8318b8767bd36, type: 3}
-    Scale: 0.6
+    Scale: 0.72
     Health: 32
     Speed: 2.3
     CoreDamage: 8
     Bounty: 4
     FirstWave: 4
     Weight: 2
-    Hover: 0.35
+    Hover: 0.1
     Traits: 4
   - Id: AcidSpitter
     Name: Acid Spitter
