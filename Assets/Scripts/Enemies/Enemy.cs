@@ -60,6 +60,10 @@ namespace DungeonConveyor
         public bool IsChilled => chillTime > 0f;
         /// <summary>Set by Combat when it died to a missile or mortar (Chain Reaction).</summary>
         public bool KilledByExplosion { get; set; }
+        /// <summary>The cell a saboteur wrecks when it reports ReachedBelt (its own, or where its lava blob landed).</summary>
+        public Vector2Int WreckCell { get; private set; }
+        /// <summary>Busy with an attack telegraph (chewing, lobbing, slamming) or enraged: stands still meanwhile.</summary>
+        public bool Attacking => attack != Attack.None;
         float speedScale = 1f, size = 1f, regen;
 
         public enum StepResult { Moving, ReachedCore, ReachedBelt }
@@ -85,9 +89,22 @@ namespace DungeonConveyor
 
         // Rigid-part animation (null for one-piece models or when EnemyCatalog.RigAnimation is off).
         EnemyRig rig;
-        Vector3 lastGround;
+        GameObject model;
+        Material spriteMaterial;
+        Vector3 lastGround, lastFacing;
         bool hasLastGround;
-        float hatchHold;
+        float hatchHold, jitter = 1f, frameDt, turnRate, bank;
+
+        // Attack telegraphs (EnemyCatalog.RigSettings): a clip plays while it stands, the gameplay lands on its event.
+        enum Attack { None, Chew, Lob, Slam, Enrage }
+        Attack attack;
+        int chewClip = -1, lobClip = -1, slamClip = -1, enrageClip = -1;
+        float attackTime, attackDwell, attackResolveAt, blobLandsAt;
+        string attackEvent;
+        bool attackEventHit, attackResolved;
+        Vector2Int lobTarget;
+        Fx.Blob blob;
+        System.Action<string> onRigEvent;
 
         static Camera cam;
         static void Billboard(Transform tr)
@@ -133,31 +150,15 @@ namespace DungeonConveyor
 
             body = new GameObject("Body").transform;
             body.SetParent(transform, false);
-            GameObject model;
-            if (def.Model != null) model = Instantiate(def.Model, body, false);
-            else
-            {
-                model = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                model.transform.SetParent(body, false);
-                model.transform.localPosition = Vector3.up * 0.5f;
-            }
-            PlanetArt.StripColliders(model);
-            bool feedback = EnemyLook.On;
+            spriteMaterial = material;
             var cfg = EnemyLook.Settings;
             // A crowd of one kind shouldn't move in lockstep: a little spread in size and bob speed.
-            float jitter = feedback ? 1f + Random.Range(-cfg.ScaleJitter, cfg.ScaleJitter) : 1f;
-            if (feedback) bobSpeed = 1f + Random.Range(-cfg.BobJitter, cfg.BobJitter);
-            model.transform.localScale *= def.Scale * jitter;
-            model.transform.localRotation = Quaternion.Euler(0f, EnemyCatalog.Instance != null ? EnemyCatalog.Instance.YawOffset : 0f, 0f);
-            var bounds = new Bounds(body.position, Vector3.zero);
-            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            if (EnemyLook.On)
             {
-                bounds.Encapsulate(r.bounds);
-                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                jitter = 1f + Random.Range(-cfg.ScaleJitter, cfg.ScaleJitter);
+                bobSpeed = 1f + Random.Range(-cfg.BobJitter, cfg.BobJitter);
             }
-            modelHeight = Mathf.Max(0.2f, bounds.max.y - body.position.y);
-            if (EnemyRig.On) rig = EnemyRig.Create(model, def.Gait); // before the look adds its own meshes
-            if (feedback) look = new EnemyLook(model, transform, material, new Vector2(bounds.size.x, bounds.size.z));
+            BuildModel(def.Model, def.Gait, def.Clips);
             enabled = false; // Update only runs while crumbling
 
             bar = new GameObject("Bar").transform;
@@ -188,17 +189,74 @@ namespace DungeonConveyor
             transform.position = fallFrom;
         }
 
-        /// <summary>Turns this enemy into a boss: health, Core damage and bounty set, drawn bigger, walks slower.</summary>
+        /// <summary>
+        /// The model under body, with its rig and feedback layer (replacing any earlier ones): prefab (a sphere if null),
+        /// gait = the loop, clips = the rest (EnemyCatalog.Entry.Clips).
+        /// </summary>
+        void BuildModel(GameObject prefab, EnemyGait gait, EnemyGait[] clips)
+        {
+            if (model != null)
+            {
+                rig?.Dispose();
+                look?.Dispose();
+                Destroy(model);
+                rig = null;
+                look = null;
+            }
+            bool wasActive = body.gameObject.activeSelf;
+            body.gameObject.SetActive(true); // renderer bounds are empty while inactive
+            if (prefab != null) model = Instantiate(prefab, body, false);
+            else
+            {
+                model = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                model.transform.SetParent(body, false);
+                model.transform.localPosition = Vector3.up * 0.5f;
+            }
+            PlanetArt.StripColliders(model);
+            model.transform.localScale *= Def.Scale * jitter;
+            model.transform.localRotation = Quaternion.Euler(0f, EnemyCatalog.Instance != null ? EnemyCatalog.Instance.YawOffset : 0f, 0f);
+            var bounds = new Bounds(body.position, Vector3.zero);
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                bounds.Encapsulate(r.bounds);
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+            modelHeight = Mathf.Max(0.2f, bounds.max.y - body.position.y);
+            if (EnemyRig.On) rig = EnemyRig.Create(model, gait, clips, IsFlying); // before the look adds its own meshes
+            chewClip = lobClip = slamClip = enrageClip = -1;
+            if (rig != null)
+            {
+                if (onRigEvent == null) onRigEvent = OnRigEvent;
+                rig.OnEvent = onRigEvent;
+                chewClip = rig.Clip("Chew");
+                lobClip = rig.Clip("Lob");
+                slamClip = rig.Clip("Slam");
+                if (slamClip < 0) slamClip = rig.Clip("Dive"); // a flier's attack on the Core
+                enrageClip = rig.Clip("Enrage");
+            }
+            if (EnemyLook.On) look = new EnemyLook(model, transform, spriteMaterial, new Vector2(bounds.size.x, bounds.size.z));
+            body.gameObject.SetActive(wasActive);
+        }
+
+        /// <summary>
+        /// Turns this enemy into a boss: health, Core damage and bounty set, drawn bigger, walks slower; with its own
+        /// model (EnemyCatalog.Entry.BossModel) and clips if it has one. Call before it lands.
+        /// </summary>
         public void MakeBoss(float health, float coreDamage, int bounty, float scale = 2f, float speed = 0.6f)
         {
+            // A boss model is built at boss size already: it is not scaled up again.
+            bool own = Def.BossModel != null && !Landed;
+            if (own)
+                BuildModel(Def.BossModel, Def.BossGait != null ? Def.BossGait : Def.Gait,
+                    Def.BossClips != null && Def.BossClips.Length > 0 ? Def.BossClips : Def.Clips);
             IsBoss = true;
             MaxHealth = Health = health;
             CoreDamage = coreDamage;
             Bounty = bounty;
-            size = scale;
+            size = own ? 1f : scale;
             speedScale = speed;
             body.localScale = Vector3.one * size;
-            meteor.transform.localScale = Vector3.one * 1.3f * size;
+            meteor.transform.localScale = Vector3.one * 1.3f * scale;
         }
 
         /// <summary>Gives this enemy an elite wave's modifier (and a bigger bounty).</summary>
@@ -293,11 +351,15 @@ namespace DungeonConveyor
         /// </summary>
         public StepResult Step(float dt, EnemyFlows flows)
         {
+            frameDt = dt;
             if (!Landed)
             {
                 Fall(dt);
                 return StepResult.Moving;
             }
+            if (!Alive) return StepResult.Moving; // killed this frame: Combat removes it, it attacks no more
+
+            if (attack != Attack.None) return TickAttack(dt);
 
             if (hatchHold > 0f)
             {
@@ -310,6 +372,8 @@ namespace DungeonConveyor
             var flow = IsFlying ? flows.Air : flows.Ground;
             bool hunting = IsSaboteur && flows.Belts != null && flows.Belts.Distance(toCell) != FlowField.Unreachable;
             if (hunting) flow = flows.Belts;
+            // A lobber stops short of the belt and spits at it.
+            int arriveAt = hunting && CanLob ? Mathf.Max(0, EnemyRig.Settings.LobRange) : 0;
             // Uphill is slow going on foot.
             float climb = !IsFlying && toLevel > fromLevel && t < 1f ? 0.65f : 1f;
             float move = Def.Speed * speedScale * SlowFactor * climb * dt;
@@ -323,16 +387,170 @@ namespace DungeonConveyor
                 }
                 move -= left;
                 t = 1f;
-                bool moving = ChooseNext(flow, out bool arrived);
+                bool moving = ChooseNext(flow, arriveAt, out bool arrived);
                 if (arrived)
                 {
                     Place();
-                    return hunting ? StepResult.ReachedBelt : StepResult.ReachedCore;
+                    return Arrive(hunting, flows);
                 }
                 if (!moving) break;
             }
             Place();
             return StepResult.Moving;
+        }
+
+        // ---------------------------------------------------------------- attack telegraphs
+
+        bool CanLob => rig != null && lobClip >= 0 && EnemyRig.Settings.LobDwell > 0f;
+
+        /// <summary>
+        /// At its target: a belt (saboteur) or the Core. With a matching clip and a dwell above 0 it starts that attack
+        /// (and reports Moving until the gameplay lands); otherwise it reports the arrival right away, as before.
+        /// </summary>
+        StepResult Arrive(bool belt, EnemyFlows flows)
+        {
+            WreckCell = toCell;
+            var cfg = EnemyRig.Settings;
+            if (belt)
+            {
+                if (CanLob && FindBelt(flows.Belts, out lobTarget))
+                {
+                    BeginAttack(Attack.Lob, lobClip, cfg.LobDwell, "Launch");
+                    return StepResult.Moving;
+                }
+                if (rig != null && chewClip >= 0 && cfg.ChewDwell > 0f)
+                {
+                    BeginAttack(Attack.Chew, chewClip, cfg.ChewDwell, "Bite");
+                    return StepResult.Moving;
+                }
+                return StepResult.ReachedBelt;
+            }
+            if (rig != null && slamClip >= 0 && cfg.SlamDwell > 0f)
+            {
+                BeginAttack(Attack.Slam, slamClip, cfg.SlamDwell, "Impact");
+                return StepResult.Moving;
+            }
+            return StepResult.ReachedCore;
+        }
+
+        /// <summary>The belt cell down the belt flow from here (a lobber stops a few cells short of it).</summary>
+        bool FindBelt(FlowField belts, out Vector2Int cell)
+        {
+            cell = toCell;
+            if (belts == null) return false;
+            for (int i = 0; i <= EnemyRig.Settings.LobRange + 2; i++)
+            {
+                int d = belts.Distance(cell);
+                if (d == 0) return true;
+                if (d == FlowField.Unreachable || !belts.Next(cell, out var next)) return false;
+                cell = next;
+            }
+            return false;
+        }
+
+        void BeginAttack(Attack kind, int clip, float dwell, string fireOn)
+        {
+            attack = kind;
+            attackTime = 0f;
+            attackDwell = dwell;
+            attackEvent = fireOn;
+            attackEventHit = attackResolved = false;
+            attackResolveAt = rig.Play(clip, dwell, fireOn);
+        }
+
+        void OnRigEvent(string name)
+        {
+            if (attack == Attack.None || attackResolved) return;
+            if (name == attackEvent || name == EnemyRig.EndEvent) attackEventHit = true;
+        }
+
+        /// <summary>While attacking: stands, plays the clip, and lands the gameplay on its event (at the latest in time).</summary>
+        StepResult TickAttack(float dt)
+        {
+            attackTime += dt;
+            Place(); // ticks the rig: its events come in through OnRigEvent
+            bool fire = !attackResolved && (attackEventHit || attackTime >= attackResolveAt);
+            switch (attack)
+            {
+                case Attack.Chew:
+                    if (fire)
+                    {
+                        attackResolved = true;
+                        EnemyLook.Chips(AimPoint, 5, body.localScale.x, 1.2f);
+                        if (attackTime >= attackDwell) EndAttack();
+                        return StepResult.ReachedBelt;
+                    }
+                    if (attackResolved && attackTime >= attackDwell) EndAttack();
+                    return StepResult.Moving;
+                case Attack.Lob:
+                    if (fire)
+                    {
+                        attackResolved = true;
+                        Launch();
+                    }
+                    if (attackResolved && attackTime >= blobLandsAt)
+                    {
+                        blob = null; // it splashes on its own
+                        WreckCell = lobTarget;
+                        EndAttack();
+                        return StepResult.ReachedBelt;
+                    }
+                    return StepResult.Moving;
+                case Attack.Slam:
+                    if (!fire) return StepResult.Moving;
+                    attackResolved = true;
+                    Fx.Burst(GroundPos + GroundPos.normalized * ConveyorArt.SurfaceHeight, new Color(0.62f, 0.57f, 0.5f, 0.85f), 1.1f * body.localScale.x);
+                    EndAttack();
+                    return StepResult.ReachedCore;
+                default: // Enrage: a short stand while the clip plays
+                    if (attackTime >= attackDwell) EndAttack();
+                    return StepResult.Moving;
+            }
+        }
+
+        /// <summary>The lava blob leaves the Muzzle node (or RigSettings.LobMuzzle) for the target belt.</summary>
+        void Launch()
+        {
+            var cfg = EnemyRig.Settings;
+            var from = rig.Muzzle != null ? rig.Muzzle.position : model.transform.TransformPoint(cfg.LobMuzzle);
+            var to = SurfacePoint(lobTarget, map.HeightAt(lobTarget)) + map.Up(lobTarget) * (ConveyorArt.SurfaceHeight + 0.05f);
+            float flight = Mathf.Max(0.05f, cfg.LobFlight);
+            blob = Fx.Lob(from, to, flight, cfg.LobArc, 0.22f * body.localScale.x * Mathf.Max(0.5f, Def.Scale / 0.6f));
+            blobLandsAt = attackTime + flight;
+        }
+
+        void EndAttack()
+        {
+            // A lob plays out on its own (the spitter recovers while the blob flies); the rest stop with the attack.
+            if (attack != Attack.Lob) rig?.Stop();
+            attack = Attack.None;
+            hasLastGround = false; // no jump in the walk phase
+        }
+
+        /// <summary>Killed or gone mid-attack: nothing lands any more (a blob in the air fizzles).</summary>
+        void CancelAttack()
+        {
+            blob?.Fizzle();
+            blob = null;
+            attack = Attack.None;
+            attackResolved = true;
+        }
+
+        /// <summary>Plates broke off: a short enraged stand with the Enrage clip (unless it is busy attacking).</summary>
+        void Enrage()
+        {
+            if (IsBoss) CameraController.Shake(0.25f);
+            Sfx.Play(Sfx.Lib.MeteorImpact, AimPoint);
+            if (rig == null || enrageClip < 0 || attack != Attack.None) return;
+            if (IsBoss) Sfx.Play(Sfx.Lib.BossLand, AimPoint);
+            rig.Play(enrageClip);
+            float hold = EnemyRig.Settings.EnrageHold;
+            if (hold <= 0f || hatchHold > 0f) return;
+            attack = Attack.Enrage;
+            attackTime = 0f;
+            attackDwell = hold;
+            attackEvent = null;
+            attackResolved = true;
         }
 
         void Fall(float dt)
@@ -367,14 +585,14 @@ namespace DungeonConveyor
             Place();
         }
 
-        bool ChooseNext(FlowField flow, out bool arrived)
+        bool ChooseNext(FlowField flow, int arriveAt, out bool arrived)
         {
             arrived = false;
             var here = toCell;
             fromCell = toCell;
             fromLevel = toLevel;
             StepsToCore = flow.Distance(here);
-            if (StepsToCore == 0)
+            if (StepsToCore <= arriveAt)
             {
                 arrived = true;
                 return false;
@@ -393,7 +611,8 @@ namespace DungeonConveyor
             var b = SurfacePoint(toCell, toLevel);
             GroundPos = Vector3.Slerp(a, b, t);
             var up = GroundPos.normalized;
-            var heading = Vector3.ProjectOnPlane(b - a, up);
+            // A lobber turns to face the belt it spits at.
+            var heading = Vector3.ProjectOnPlane(attack == Attack.Lob ? SurfacePoint(lobTarget, map.HeightAt(lobTarget)) - GroundPos : b - a, up);
             if (heading.sqrMagnitude > 1e-6f) facing = heading.normalized;
             else facing = Vector3.ProjectOnPlane(facing, up).normalized;
 
@@ -402,14 +621,32 @@ namespace DungeonConveyor
             float hop = Def.Hover > 0f ? Mathf.Sin(time * 6f + bob) * 0.05f
                 : rig != null && rig.Walks ? 0f : Mathf.Abs(Mathf.Sin(time * 9f + bob)) * 0.03f;
             transform.position = GroundPos + up * (ConveyorArt.SurfaceHeight + Def.Hover + hop);
-            if (facing.sqrMagnitude > 1e-6f) body.rotation = Quaternion.LookRotation(facing, up);
+            if (facing.sqrMagnitude > 1e-6f)
+            {
+                var rotation = Quaternion.LookRotation(facing, up);
+                if (rig != null && IsFlying)
+                {
+                    // Fliers bank into their turns.
+                    var cfg = EnemyRig.Settings;
+                    if (frameDt > 0f && lastFacing.sqrMagnitude > 0.5f)
+                    {
+                        float turn = Vector3.SignedAngle(lastFacing, facing, up) / frameDt;
+                        turnRate = Mathf.Lerp(turnRate, turn, 1f - Mathf.Exp(-cfg.BankResponse * frameDt));
+                        bank = Mathf.Clamp(-turnRate * cfg.BankPerTurn, -cfg.BankMax, cfg.BankMax);
+                    }
+                    lastFacing = facing;
+                    rotation *= Quaternion.Euler(0f, 0f, bank);
+                }
+                body.rotation = rotation;
+            }
             if (rig != null)
             {
                 float walked = hasLastGround ? Vector3.Distance(GroundPos, lastGround) : 0f;
                 lastGround = GroundPos;
                 hasLastGround = true;
-                rig.Tick(walked);
+                rig.Tick(walked, frameDt);
             }
+            frameDt = 0f; // time only counts once per Step
 
             if (look != null)
                 look.Tick(Health / MaxHealth, statusTint, GroundPos, up, facing, body.localScale.x, IsFlying ? Def.Hover + 0.1f : 0f);
@@ -479,6 +716,12 @@ namespace DungeonConveyor
                 }
             }
             Health -= amount;
+            // Armour plates break off at health thresholds (and it rages).
+            if (rig != null && rig.Plates > rig.PlatesBroken && Alive && Landed && amount > 0f)
+            {
+                var up = GroundPos.normalized;
+                if (rig.BreakPlates(Health / MaxHealth, transform.parent, GroundPos + up * ConveyorArt.SurfaceHeight, up) > 0) Enrage();
+            }
             return !Alive;
         }
 
@@ -489,6 +732,7 @@ namespace DungeonConveyor
         public void Remove()
         {
             All.Remove(this);
+            CancelAttack();
             if (look != null && !Alive && Landed && dieTime < 0f) Crumble();
             else if (dieTime < 0f) Destroy(gameObject);
         }
@@ -536,6 +780,11 @@ namespace DungeonConveyor
             look.Crumble(k, GroundPos, up, facing, dieScale.x);
         }
 
-        void OnDestroy() => look?.Dispose();
+        void OnDestroy()
+        {
+            blob?.Fizzle();
+            rig?.Dispose();
+            look?.Dispose();
+        }
     }
 }

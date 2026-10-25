@@ -5,7 +5,8 @@ namespace DungeonConveyor
 {
     /// <summary>
     /// Short-lived combat visuals built from one procedural soft-circle sprite, always turned to face the camera:
-    /// explosions, muzzle flashes, sparks, flame puffs, plus line renderers for beams and range rings on the planet.
+    /// explosions, muzzle flashes, sparks, flame puffs, lobbed lava blobs, plus line renderers for beams and range rings
+    /// on the planet.
     /// Ticked by Combat.
     /// </summary>
     public static class Fx
@@ -18,7 +19,29 @@ namespace DungeonConveyor
             public Color Color;
         }
 
+        /// <summary>A lava blob in flight (Fx.Lob): arcs to its target and splashes there; Fizzle drops it on the way.</summary>
+        public sealed class Blob
+        {
+            internal SpriteRenderer Core, Rim;
+            internal Vector3 From, To, Up;
+            internal float Age, Life, Height, Size, NextTrail;
+            /// <summary>Landed (splashed) or fizzled.</summary>
+            public bool Done { get; internal set; }
+
+            /// <summary>Puts it out mid-air (its spitter died): a little smoke and it is gone, no splash.</summary>
+            public void Fizzle()
+            {
+                if (Done) return;
+                Done = true;
+                if (Core != null) Spawn(Core.transform.position, new Color(0.35f, 0.32f, 0.33f, 0.7f), Size * 0.6f, Size * 1.2f, 0.3f);
+            }
+        }
+
+        /// <summary>Lava blob colours: orange core, hostile-glow (#FF2E63) rim.</summary>
+        public static readonly Color LavaCore = new Color(1f, 0.56f, 0.12f, 1f), LavaRim = new Color32(0xFF, 0x2E, 0x63, 0xFF);
+
         static readonly List<Effect> effects = new List<Effect>();
+        static readonly List<Blob> blobs = new List<Blob>();
         static Transform root;
         static Material material;
         static Sprite soft;
@@ -27,6 +50,7 @@ namespace DungeonConveyor
         static void ResetStatics()
         {
             effects.Clear();
+            blobs.Clear();
             root = null;
             material = null;
         }
@@ -104,10 +128,76 @@ namespace DungeonConveyor
             }
         }
 
+        /// <summary>
+        /// A lava blob lobbed from one point on the planet to another in `seconds`, its arc `arc` times the distance
+        /// high, trailing sparks; it splashes on landing. Keep the handle to Fizzle it.
+        /// </summary>
+        public static Blob Lob(Vector3 from, Vector3 to, float seconds, float arc, float size)
+        {
+            var b = new Blob
+            {
+                From = from, To = to, Up = (from + to).normalized, Life = Mathf.Max(0.05f, seconds),
+                Height = arc * Vector3.Distance(from, to) + 0.15f * size, Size = size,
+            };
+            if (root == null) { b.Done = true; return b; }
+            b.Rim = NewSprite("LavaRim", LavaRim, size);
+            b.Core = NewSprite("LavaCore", LavaCore, size * 0.62f);
+            b.Core.sortingOrder = 1;
+            b.Rim.transform.position = b.Core.transform.position = from;
+            Flash(from, LavaCore, size * 1.2f);
+            blobs.Add(b);
+            return b;
+        }
+
+        static SpriteRenderer NewSprite(string name, Color color, float scale)
+        {
+            var sr = new GameObject(name).AddComponent<SpriteRenderer>();
+            sr.transform.SetParent(root, false);
+            if (material != null) sr.sharedMaterial = material;
+            sr.sprite = Soft;
+            sr.color = color;
+            sr.transform.localScale = Vector3.one * scale;
+            return sr;
+        }
+
+        static void TickBlobs(float dt, Quaternion facing)
+        {
+            for (int i = blobs.Count - 1; i >= 0; i--)
+            {
+                var b = blobs[i];
+                if (!b.Done)
+                {
+                    b.Age += dt;
+                    float t = Mathf.Clamp01(b.Age / b.Life);
+                    var p = Vector3.Lerp(b.From, b.To, t) + b.Up * (b.Height * 4f * t * (1f - t));
+                    if (b.Core != null) b.Core.transform.SetPositionAndRotation(p, facing);
+                    if (b.Rim != null)
+                    {
+                        b.Rim.transform.SetPositionAndRotation(p, facing);
+                        b.Rim.transform.localScale = Vector3.one * b.Size * (1f + 0.15f * Mathf.Sin(b.Age * 40f));
+                    }
+                    if (b.Age >= b.NextTrail)
+                    {
+                        b.NextTrail = b.Age + 0.04f;
+                        Spawn(p, new Color(LavaRim.r, LavaRim.g, LavaRim.b, 0.7f), b.Size * 0.45f, 0.02f, 0.25f, b.Up * 0.2f);
+                    }
+                    if (t < 1f) continue;
+                    b.Done = true;
+                    // Splash: an orange pop with a glowing rim and droplets.
+                    Explosion(b.To, b.Size * 1.1f, new Color(LavaCore.r, LavaCore.g, LavaCore.b, 0.9f));
+                    Burst(b.To, LavaRim, b.Size * 2.2f);
+                }
+                if (b.Core != null) Object.Destroy(b.Core.gameObject);
+                if (b.Rim != null) Object.Destroy(b.Rim.gameObject);
+                blobs.RemoveAt(i);
+            }
+        }
+
         public static void Tick(float dt)
         {
             var cam = Camera.main;
             var facing = cam != null ? cam.transform.rotation : Quaternion.identity;
+            TickBlobs(dt, facing);
             for (int i = effects.Count - 1; i >= 0; i--)
             {
                 var e = effects[i];

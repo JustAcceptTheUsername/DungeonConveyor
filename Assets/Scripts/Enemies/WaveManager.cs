@@ -249,11 +249,14 @@ namespace DungeonConveyor
             }
         }
 
-        /// <summary>A saboteur on a belt tile wrecks it (no refund) and moves on.</summary>
+        /// <summary>
+        /// A saboteur wrecks a belt tile (no refund) and moves on: the one it stands on, or where its lava blob landed
+        /// (Enemy.WreckCell).
+        /// </summary>
         void Wreck(Enemy e)
         {
             e.BeltsToWreck--;
-            if (!(map.BuildingAt(e.Cell) is Conveyor belt)) return;
+            if (!(map.BuildingAt(e.WreckCell) is Conveyor belt)) return;
             var at = belt.Center;
             build.RemoveBuilding(belt, refund: false);
             BeltsWrecked++;

@@ -115,6 +115,7 @@ namespace DungeonConveyor
         public void Dispose()
         {
             if (material != null) Object.Destroy(material);
+            if (shadow != null) Object.Destroy(shadow.gameObject);
         }
 
         static Mesh Hull(Mesh source)
