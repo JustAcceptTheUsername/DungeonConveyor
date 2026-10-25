@@ -48,6 +48,26 @@ MonoBehaviour:
     CrumbleImpulse: 0.55
     CrumbleSpin: 540
     CrumbleGravity: 9
+    ActionSpeed: 1
+    ActionAmplitude: 1
+    FlapRate: 1
+    BankMax: 22
+    BankPerTurn: 0.08
+    BankResponse: 7
+    ChewDwell: 0.5
+    LobDwell: 0.6
+    LobRange: 2
+    LobFlight: 0.45
+    LobArc: 0.45
+    LobMuzzle: {x: 0, y: 0.35, z: 0.25}
+    SlamDwell: 0.6
+    PlateBreakAt:
+    - 0.75
+    - 0.5
+    - 0.25
+    PlateSeconds: 1
+    PlateImpulse: 1.6
+    EnrageHold: 0.4
   Entries:
   - Id: Crawler
     Name: Pebble Skitterer
@@ -62,10 +82,14 @@ MonoBehaviour:
     Hover: 0
     Traits: 1
     Gait: {fileID: 11400000, guid: ef8daf2f1438e1449aba51ed4f8054e9, type: 2}
+    Clips: []
+    BossModel: {fileID: 0}
+    BossGait: {fileID: 0}
+    BossClips: []
   - Id: CrystalSpider
-    Name: Crystal Spider
-    Model: {fileID: 2174832299153047374, guid: a827ecd0dc9427043ae1db5f9279eeac, type: 3}
-    Scale: 0.6
+    Name: Ore-eater
+    Model: {fileID: 3254517452895515522, guid: dbc2c061035fcc1408c04b9eeff81b81, type: 3}
+    Scale: 1
     Health: 75
     Speed: 1.25
     CoreDamage: 15
@@ -74,11 +98,16 @@ MonoBehaviour:
     Weight: 3
     Hover: 0
     Traits: 8
-    Gait: {fileID: 0}
+    Gait: {fileID: 11400000, guid: c47cbdc73778aa64296fbfd53af09dd6, type: 2}
+    Clips:
+    - {fileID: 11400000, guid: 0923bdc66fc2bc64bb7f09c6bee408ad, type: 2}
+    BossModel: {fileID: 0}
+    BossGait: {fileID: 0}
+    BossClips: []
   - Id: Wasp
-    Name: Wasp
-    Model: {fileID: 895827133793382441, guid: 1dcb7811228554e409a8318b8767bd36, type: 3}
-    Scale: 0.72
+    Name: Rock Bat
+    Model: {fileID: 7265235581013586688, guid: 7d4afa02a0c8e1045bc41899c6273d92, type: 3}
+    Scale: 0.9
     Health: 32
     Speed: 2.3
     CoreDamage: 8
@@ -87,11 +116,16 @@ MonoBehaviour:
     Weight: 2
     Hover: 0.1
     Traits: 4
-    Gait: {fileID: 0}
+    Gait: {fileID: 11400000, guid: 33c4bac2c3f04ae4ca71229f91b438ee, type: 2}
+    Clips:
+    - {fileID: 11400000, guid: 7d1786570d33cd045bfbd265d45a8786, type: 2}
+    BossModel: {fileID: 0}
+    BossGait: {fileID: 0}
+    BossClips: []
   - Id: AcidSpitter
-    Name: Acid Spitter
-    Model: {fileID: 3610252699757839455, guid: 7e62bffd9e92c0742a0a9635227d9d6a, type: 3}
-    Scale: 0.6
+    Name: Magma Spitter
+    Model: {fileID: 793437179945401501, guid: 6d1d045f3a3aa394cab231eb7d371465, type: 3}
+    Scale: 1.1
     Health: 150
     Speed: 0.95
     CoreDamage: 30
@@ -100,11 +134,16 @@ MonoBehaviour:
     Weight: 1.5
     Hover: 0
     Traits: 8
-    Gait: {fileID: 0}
+    Gait: {fileID: 11400000, guid: a5b92e7defdd63b49b827680179d66dd, type: 2}
+    Clips:
+    - {fileID: 11400000, guid: f10b5e3d28a4683458008afb97433a30, type: 2}
+    BossModel: {fileID: 0}
+    BossGait: {fileID: 0}
+    BossClips: []
   - Id: Brute
-    Name: Brute
-    Model: {fileID: 1129826029265878889, guid: b9163f07339881241aa510b5e1c15fb3, type: 3}
-    Scale: 0.8
+    Name: Ore Golem
+    Model: {fileID: 1758385604813967037, guid: b85f57af2ba4ff54abfab69e93d888cd, type: 3}
+    Scale: 0.95
     Health: 480
     Speed: 0.7
     CoreDamage: 90
@@ -113,4 +152,11 @@ MonoBehaviour:
     Weight: 0.6
     Hover: 0
     Traits: 2
-    Gait: {fileID: 0}
+    Gait: {fileID: 11400000, guid: 8a26d9c78f7247946840994a724c8111, type: 2}
+    Clips:
+    - {fileID: 11400000, guid: 0358caf618efc6948ba2bf282a2506e5, type: 2}
+    BossModel: {fileID: 7735461428896641223, guid: 8bd4180ddd2e4b742ad25045887a07b8, type: 3}
+    BossGait: {fileID: 11400000, guid: 5382a66bd903e594aa280c96462def16, type: 2}
+    BossClips:
+    - {fileID: 11400000, guid: 65e7be0035ac0c64291b905c96ee695b, type: 2}
+    - {fileID: 11400000, guid: a62f607c434e19a4c90b05b127ec542f, type: 2}
