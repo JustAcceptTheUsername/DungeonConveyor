@@ -38,8 +38,19 @@ namespace DungeonConveyor
             [Tooltip("Fast: 35% quicker. Armored: half damage from bullets and lasers. Flying: flies straight over walls " +
                      "and cliffs, safe from mines and flames. Saboteur: goes for your belts first and wrecks them.")]
             public EnemyTrait Traits;
-            [Tooltip("Walk cycle for a rigid-part model (EnemyRig). Empty: the parts don't walk (hatch and crumble still work).")]
+            [Tooltip("Walk cycle for a rigid-part model (EnemyRig), or the Fly loop of a flier. Empty: the parts don't walk " +
+                     "(hatch and crumble still work).")]
             public EnemyGait Gait;
+            [Tooltip("More clips by action name (<Id>_<Action>): Fly (a flier's loop, wins over Gait), Chew (saboteur at a " +
+                     "belt, wrecks on Bite), Lob (spits at a belt from range, launches on Launch), Slam (at the Core, " +
+                     "damages on Impact), Enrage (when armour plates break off). Missing ones keep the old instant behaviour.")]
+            public EnemyGait[] Clips;
+            [Tooltip("Model used when this kind comes as a boss (e.g. OreGolem_Boss for the Brute). Empty: the normal model, bigger.")]
+            public GameObject BossModel;
+            [Tooltip("The boss model's own walk. Empty: Gait.")]
+            public EnemyGait BossGait;
+            [Tooltip("The boss model's own clips. Empty: Clips.")]
+            public EnemyGait[] BossClips;
 
             [System.NonSerialized] public Sprite[] Sprites; // per Dir, rendered at runtime by GameArt
         }
@@ -115,6 +126,47 @@ namespace DungeonConveyor
             public float CrumbleSpin = 540f;
             [Tooltip("Gravity on the falling parts (world units per second squared at scale 1).")]
             public float CrumbleGravity = 9f;
+
+            [Header("Clips and fliers")]
+            [Tooltip("Playback speed of the one-shot clips (Chew, Lob, Slam, Enrage).")]
+            public float ActionSpeed = 1f;
+            [Tooltip("Amplitude of the one-shot clips relative to the keys (Body/Torso squash included).")]
+            public float ActionAmplitude = 1f;
+            [Tooltip("Wing beats of a flier's Fly loop relative to the keyed rate (the loop is time-based, not distance).")]
+            public float FlapRate = 1f;
+            [Tooltip("Most a flier banks into a turn (degrees).")]
+            public float BankMax = 22f;
+            [Tooltip("Bank per degree per second of turning.")]
+            public float BankPerTurn = 0.08f;
+            [Tooltip("How fast the bank follows the turning (per second).")]
+            public float BankResponse = 7f;
+
+            [Header("Attack telegraphs (gameplay; 0 = the old instant behaviour)")]
+            [Tooltip("Seconds a saboteur with a Chew clip stands chewing at a belt; the belt is wrecked on Bite (or when " +
+                     "the time is up). The clip is sped up so Bite lands inside this time.")]
+            public float ChewDwell = 0.5f;
+            [Tooltip("Seconds a saboteur with a Lob clip winds up before the blob leaves (on Launch).")]
+            public float LobDwell = 0.6f;
+            [Tooltip("How many cells short of the belt a lobber stops and spits.")]
+            public int LobRange = 2;
+            [Tooltip("Flight time of the lava blob; the belt is wrecked where it lands.")]
+            public float LobFlight = 0.45f;
+            [Tooltip("Height of the blob's arc relative to the distance.")]
+            public float LobArc = 0.45f;
+            [Tooltip("Where the blob leaves without a Muzzle node (model units: x right, y up, z forward).")]
+            public Vector3 LobMuzzle = new Vector3(0f, 0.35f, 0.25f);
+            [Tooltip("Seconds an enemy with a Slam clip winds up at the Core; the damage lands on Impact.")]
+            public float SlamDwell = 0.6f;
+
+            [Header("Armour plates (Plate_* parts)")]
+            [Tooltip("Health fractions at which the Plate_* parts break off (spread evenly over the thresholds).")]
+            public float[] PlateBreakAt = { 0.75f, 0.5f, 0.25f };
+            [Tooltip("Seconds a broken plate flies and sinks before it is gone.")]
+            public float PlateSeconds = 1f;
+            [Tooltip("Speed of a plate flying off (world units per second at scale 1).")]
+            public float PlateImpulse = 1.6f;
+            [Tooltip("Seconds the enemy stops for its Enrage clip when a plate breaks (0 = keeps walking).")]
+            public float EnrageHold = 0.4f;
         }
 
         [Tooltip("Extra yaw if the models don't face +Z.")]
