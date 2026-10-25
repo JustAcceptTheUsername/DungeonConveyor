@@ -51,8 +51,9 @@ MonoBehaviour:
     ActionSpeed: 1
     ActionAmplitude: 1
     FlapRate: 1
+    FlyTurnResponse: 6
     BankMax: 22
-    BankPerTurn: 0.08
+    BankPerTurn: 0.12
     BankResponse: 7
     ChewDwell: 0.5
     LobDwell: 0.6
@@ -67,7 +68,7 @@ MonoBehaviour:
     - 0.25
     PlateSeconds: 1
     PlateImpulse: 1.6
-    EnrageHold: 0.4
+    EnrageHold: 1
   Entries:
   - Id: Crawler
     Name: Pebble Skitterer
@@ -107,7 +108,7 @@ MonoBehaviour:
   - Id: Wasp
     Name: Rock Bat
     Model: {fileID: 7265235581013586688, guid: 7d4afa02a0c8e1045bc41899c6273d92, type: 3}
-    Scale: 0.9
+    Scale: 1.15
     Health: 32
     Speed: 2.3
     CoreDamage: 8
@@ -143,7 +144,7 @@ MonoBehaviour:
   - Id: Brute
     Name: Ore Golem
     Model: {fileID: 1758385604813967037, guid: b85f57af2ba4ff54abfab69e93d888cd, type: 3}
-    Scale: 0.95
+    Scale: 1.2
     Health: 480
     Speed: 0.7
     CoreDamage: 90

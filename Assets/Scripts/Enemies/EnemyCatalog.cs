@@ -168,8 +168,9 @@ namespace DungeonConveyor
             public float PlateSeconds = 1f;
             [Tooltip("Speed of a plate flying off (world units per second at scale 1).")]
             public float PlateImpulse = 1.6f;
-            [Tooltip("Seconds the enemy stops for its Enrage clip when a plate breaks (0 = keeps walking).")]
-            public float EnrageHold = 0.4f;
+            [Tooltip("Most seconds the enemy stands for its Enrage clip when a plate breaks: it stands for the whole clip, " +
+                     "sped up to fit (0 = keeps walking while the clip plays).")]
+            public float EnrageHold = 1f;
         }
 
         [Tooltip("Extra yaw if the models don't face +Z.")]

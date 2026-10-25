@@ -515,7 +515,7 @@ namespace DungeonConveyor
             var from = rig.Muzzle != null ? rig.Muzzle.position : model.transform.TransformPoint(cfg.LobMuzzle);
             var to = SurfacePoint(lobTarget, map.HeightAt(lobTarget)) + map.Up(lobTarget) * (ConveyorArt.SurfaceHeight + 0.05f);
             float flight = Mathf.Max(0.05f, cfg.LobFlight);
-            blob = Fx.Lob(from, to, flight, cfg.LobArc, 0.22f * body.localScale.x * Mathf.Max(0.5f, Def.Scale / 0.6f));
+            blob = Fx.Lob(from, to, flight, cfg.LobArc, 0.3f * body.localScale.x * Mathf.Max(0.5f, Def.Scale / 0.6f));
             blobLandsAt = attackTime + flight;
         }
 
@@ -543,12 +543,17 @@ namespace DungeonConveyor
             Sfx.Play(Sfx.Lib.MeteorImpact, AimPoint);
             if (rig == null || enrageClip < 0 || attack != Attack.None) return;
             if (IsBoss) Sfx.Play(Sfx.Lib.BossLand, AimPoint);
-            rig.Play(enrageClip);
             float hold = EnemyRig.Settings.EnrageHold;
-            if (hold <= 0f || hatchHold > 0f) return;
+            if (hold <= 0f || hatchHold > 0f)
+            {
+                rig.Play(enrageClip);
+                return;
+            }
+            // It stands for the whole clip (sped up to fit the hold), so the roar and the recovery are seen: stopping
+            // the clip when the hold ran out cut it off before the roar.
             attack = Attack.Enrage;
             attackTime = 0f;
-            attackDwell = hold;
+            attackDwell = rig.Play(enrageClip, hold);
             attackEvent = null;
             attackResolved = true;
         }
