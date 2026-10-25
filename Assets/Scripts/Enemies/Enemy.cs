@@ -83,6 +83,12 @@ namespace DungeonConveyor
         Vector3 dieFrom, dieAxis, dieScale;
         Quaternion dieRotation;
 
+        // Rigid-part animation (null for one-piece models or when EnemyCatalog.RigAnimation is off).
+        EnemyRig rig;
+        Vector3 lastGround;
+        bool hasLastGround;
+        float hatchHold;
+
         static Camera cam;
         static void Billboard(Transform tr)
         {
@@ -150,6 +156,7 @@ namespace DungeonConveyor
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
             modelHeight = Mathf.Max(0.2f, bounds.max.y - body.position.y);
+            if (EnemyRig.On) rig = EnemyRig.Create(model, def.Gait); // before the look adds its own meshes
             if (feedback) look = new EnemyLook(model, transform, material, new Vector2(bounds.size.x, bounds.size.z));
             enabled = false; // Update only runs while crumbling
 
@@ -219,6 +226,8 @@ namespace DungeonConveyor
             body.gameObject.SetActive(true);
             StepsToCore = FlowField.Unreachable - 1;
             t = 1f;
+            rig?.BeginPop(Time.time);
+            hasLastGround = false;
             Place();
         }
 
@@ -290,6 +299,14 @@ namespace DungeonConveyor
                 return StepResult.Moving;
             }
 
+            if (hatchHold > 0f)
+            {
+                // Still climbing out of its meteor shell.
+                hatchHold -= dt;
+                Place();
+                return StepResult.Moving;
+            }
+
             var flow = IsFlying ? flows.Air : flows.Ground;
             bool hunting = IsSaboteur && flows.Belts != null && flows.Belts.Distance(toCell) != FlowField.Unreachable;
             if (hunting) flow = flows.Belts;
@@ -335,6 +352,17 @@ namespace DungeonConveyor
             Sfx.Play(Sfx.Lib.MeteorImpact, ground);
             Sfx.Play(IsBoss ? Sfx.Lib.BossLand : Sfx.Lib.LandFor(Def), ground);
             if (IsBoss) CameraController.Shake(0.5f);
+            if (rig != null && EnemyRig.Settings.MeteorShell != null)
+            {
+                // It hatches: the shell cracks open on the spot and the critter pops out of it.
+                var cfg = EnemyRig.Settings;
+                MeteorHatch.Play(ground + ground.normalized * ConveyorArt.SurfaceHeight, ground.normalized, facing,
+                    modelHeight * size, transform.parent);
+                rig.BeginPop(Time.time + cfg.CrackAt);
+                hatchHold = cfg.HatchHold;
+            }
+            else rig?.BeginPop(Time.time);
+            hasLastGround = false;
             t = 1f;
             Place();
         }
@@ -370,9 +398,18 @@ namespace DungeonConveyor
             else facing = Vector3.ProjectOnPlane(facing, up).normalized;
 
             float time = Time.time * bobSpeed;
-            float hop = Def.Hover > 0f ? Mathf.Sin(time * 6f + bob) * 0.05f : Mathf.Abs(Mathf.Sin(time * 9f + bob)) * 0.03f;
+            // Walkers with a rig bob in their gait instead.
+            float hop = Def.Hover > 0f ? Mathf.Sin(time * 6f + bob) * 0.05f
+                : rig != null && rig.Walks ? 0f : Mathf.Abs(Mathf.Sin(time * 9f + bob)) * 0.03f;
             transform.position = GroundPos + up * (ConveyorArt.SurfaceHeight + Def.Hover + hop);
             if (facing.sqrMagnitude > 1e-6f) body.rotation = Quaternion.LookRotation(facing, up);
+            if (rig != null)
+            {
+                float walked = hasLastGround ? Vector3.Distance(GroundPos, lastGround) : 0f;
+                lastGround = GroundPos;
+                hasLastGround = true;
+                rig.Tick(walked);
+            }
 
             if (look != null)
                 look.Tick(Health / MaxHealth, statusTint, GroundPos, up, facing, body.localScale.x, IsFlying ? Def.Hover + 0.1f : 0f);
@@ -425,7 +462,11 @@ namespace DungeonConveyor
         public bool TakeDamage(float amount, bool feedback = true)
         {
             if (!Alive) return false;
-            if (feedback && look != null && Landed && amount > 0f) look.Hit(AimPoint, body.localScale.x);
+            if (feedback && look != null && Landed && amount > 0f)
+            {
+                look.Hit(AimPoint, body.localScale.x);
+                rig?.Hit();
+            }
             if (Shield > 0f)
             {
                 float soaked = Mathf.Min(Shield, amount);
@@ -466,13 +507,15 @@ namespace DungeonConveyor
             float s = body.localScale.x;
             Fx.Burst(GroundPos + up * (ConveyorArt.SurfaceHeight + 0.1f), new Color(0.62f, 0.57f, 0.5f, 0.75f), 0.9f * s);
             EnemyLook.Chips(AimPoint, 6, s, 1.2f);
+            // With separate parts it falls apart into gravel instead of tipping over in one piece.
+            rig?.BeginCrumble(GroundPos + up * ConveyorArt.SurfaceHeight, up);
         }
 
         /// <summary>The crumble: squashes, tips over and sinks into the ground (fliers drop first), then is gone.</summary>
         void Update()
         {
             if (dieTime < 0f) return;
-            float k = (Time.time - dieTime) / look.DeathSeconds;
+            float k = (Time.time - dieTime) / (rig != null ? rig.CrumbleSeconds : look.DeathSeconds);
             if (k >= 1f)
             {
                 Destroy(gameObject);
@@ -480,6 +523,12 @@ namespace DungeonConveyor
             }
             var up = GroundPos.normalized;
             var ground = GroundPos + up * ConveyorArt.SurfaceHeight;
+            if (rig != null)
+            {
+                rig.TickCrumble(k);
+                look.Crumble(k, GroundPos, up, facing, dieScale.x);
+                return;
+            }
             float sink = k * k * modelHeight * dieScale.x * 1.1f;
             transform.position = Vector3.Lerp(dieFrom, ground, Mathf.Clamp01(k * 3f)) - up * sink;
             body.rotation = Quaternion.AngleAxis(28f * k, dieAxis) * dieRotation;
