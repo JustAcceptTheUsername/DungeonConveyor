@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.03.00">
+	<object class="AudioFile" id="{38af7aed-4ecb-4b42-9858-61116255401d}">
+		<property name="assetPath">
+			<value>DCFOLYProp_Glass Vial Drop on Concrete Small Bounces Clink_PSE_FESS_NTCV8.wav</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>1</value>
+		</property>
+		<property name="length">
+			<value>1.8666666666666667</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{179e0851-96ef-43a9-bda8-0c183feb11e3}</destination>
+		</relationship>
+	</object>
+</objects>

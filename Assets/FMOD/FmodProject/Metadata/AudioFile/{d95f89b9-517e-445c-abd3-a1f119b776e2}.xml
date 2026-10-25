@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.03.00">
+	<object class="AudioFile" id="{d95f89b9-517e-445c-abd3-a1f119b776e2}">
+		<property name="assetPath">
+			<value>DCFire_Furnace_Loop_PSEF.126.wav</value>
+		</property>
+		<property name="isStreaming">
+			<value>true</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>13.013333333333334</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{179e0851-96ef-43a9-bda8-0c183feb11e3}</destination>
+		</relationship>
+	</object>
+</objects>

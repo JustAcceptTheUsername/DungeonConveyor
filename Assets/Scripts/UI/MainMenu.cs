@@ -6,11 +6,14 @@ using UnityEngine.SceneManagement;
 namespace DungeonConveyor
 {
     /// <summary>
-    /// The title screen (Assets/Scenes/MainMenu.unity, made by Dungeon > Create Main Menu Scene): pick a difficulty
-    /// (remembered; see RunSettings.Difficulties), Play starts a new run in the game scene, Cards opens a gallery of
-    /// every upgrade card (sortable by rarity), Quit closes the game (or leaves Play mode in the editor). Settings is
-    /// shown but not hooked up yet. Drawn with IMGUI in the HUD's Arcane skin on a 1080p-tall virtual screen.
+    /// The title screen (Assets/Scenes/MainMenu.unity, made by Dungeon > Create Main Menu Scene): Play opens the new
+    /// run screen (difficulty and starting wave, both remembered; see RunSettings.Difficulties) whose Start begins the
+    /// run in the game scene, Upgrades spends Essence (earned every run) on permanent upgrades (Meta), Cards opens a gallery of every upgrade card (sortable by rarity), Quit closes the game (or
+    /// leaves Play mode in the editor). Settings opens the SettingsMenu (audio volumes, reduced motion, tutorial). Drawn with IMGUI in the HUD's Arcane
+    /// skin on a 1080p-tall virtual screen; it also draws in the editor's Game view outside Play mode (Preview picks
+    /// the screen shown there).
     /// </summary>
+    [ExecuteAlways]
     public class MainMenu : MonoBehaviour
     {
         public string GameScene = "GameScene";
@@ -19,10 +22,15 @@ namespace DungeonConveyor
         [Tooltip("Seconds the menu takes to fade in.")]
         public float FadeIn = 0.8f;
 
+        public enum Page { Main, NewRun, Cards, Upgrades }
+        [Tooltip("The screen drawn in the editor's Game view outside Play mode.")]
+        public Page Preview = Page.Main;
+
         enum Sort { RarityHighFirst, RarityLowFirst, Type }
 
         float s, vw, opened;
-        bool leaving, gallery;
+        bool leaving;
+        Page page = Page.Main;
         Sort sort = Sort.RarityHighFirst;
         List<Run.Card> cards;
         Vector2 scroll;
@@ -33,24 +41,37 @@ namespace DungeonConveyor
         {
             UIStyle.Init();
             opened = Time.unscaledTime;
-            Time.timeScale = 1f; // in case the game was left paused or sped up
+            if (Application.isPlaying)
+            {
+                Time.timeScale = 1f; // in case the game was left paused or sped up
+                Sfx.PlayMusic(Sfx.Lib.MenuMusic);
+                Sfx.PlayAmbience(Sfx.Lib.MenuAmbience);
+            }
         }
 
         void Update()
         {
             var k = Keyboard.current;
-            if (gallery && k != null && k.escapeKey.wasPressedThisFrame) gallery = false;
+            if (Application.isPlaying && page != Page.Main && k != null && k.escapeKey.wasPressedThisFrame) page = Page.Main;
         }
 
         void OnGUI()
         {
+            UIStyle.Init();
             s = Screen.height / 1080f;
             vw = Screen.width / s;
             UIStyle.EnsureStyles(s);
             BuildStyles();
-            if (gallery) { DrawGallery(); return; }
+            bool live = Application.isPlaying;
+            var shown = live ? page : Preview;
+            if (shown == Page.Cards)
+            {
+                if (cards == null) OpenGallery();
+                DrawGallery();
+                return;
+            }
 
-            float fade = Mathf.Clamp01((Time.unscaledTime - opened) / Mathf.Max(0.01f, FadeIn));
+            float fade = live ? Mathf.Clamp01((Time.unscaledTime - opened) / Mathf.Max(0.01f, FadeIn)) : 1f;
             float ease = HudFx.OutCubic(fade);
 
             // Title, with a warm glow behind it.
@@ -62,15 +83,80 @@ namespace DungeonConveyor
             Label(R(0f, ty + 124f, vw, 44f), Subtitle, subStyle, With(UIStyle.Muted, ease));
 
             GUI.color = new Color(1f, 1f, 1f, ease);
-            DrawDifficulty(330f, ease);
-
-            const float bw = 380f, bh = 76f, gap = 18f;
-            float bx = (vw - bw) * 0.5f, by = 590f + 40f * (1f - ease);
-            if (Button(bx, by, bw, bh, "Play", true)) Play();
-            if (Button(bx, by + (bh + gap), bw, bh, "Cards", true)) OpenGallery();
-            Button(bx, by + 2f * (bh + gap), bw, bh, "Settings", false, "Coming soon");
-            if (Button(bx, by + 3f * (bh + gap), bw, bh, "Quit", true)) Quit();
+            if (shown == Page.NewRun) DrawNewRun(ease);
+            else if (shown == Page.Upgrades) DrawUpgrades(ease);
+            else DrawMain(ease);
             GUI.color = Color.white;
+        }
+
+        void DrawMain(float ease)
+        {
+            const float bw = 380f, bh = 76f, gap = 18f;
+            float bx = (vw - bw) * 0.5f, by = 380f + 40f * (1f - ease);
+            if (Button(bx, by, bw, bh, "Play", true)) page = Page.NewRun;
+            if (Button(bx, by + (bh + gap), bw, bh, "Upgrades", true)) page = Page.Upgrades;
+            if (Button(bx, by + 2f * (bh + gap), bw, bh, "Cards", true)) { OpenGallery(); page = Page.Cards; }
+            if (Button(bx, by + 3f * (bh + gap), bw, bh, "Settings", true)) SettingsMenu.Open();
+            if (Button(bx, by + 4f * (bh + gap), bw, bh, "Quit", true)) Quit();
+            Label(R(0f, by + 5f * (bh + gap) + 4f, vw, 30f), $"{Meta.Essence} essence", headStyle, With(EssenceColor, ease));
+        }
+
+        static readonly Color EssenceColor = new Color(0.75f, 0.6f, 1f);
+
+        /// <summary>Permanent upgrades bought with Essence, and the Core type to bring.</summary>
+        void DrawUpgrades(float ease)
+        {
+            Label(R(0f, 300f, vw, 40f), $"ESSENCE  {Meta.Essence}", smallButtonStyle, With(EssenceColor, ease));
+            Label(R(0f, 336f, vw, 26f), "Earned every run: 1 per wave cleared, 8 per boss, 15 per map. Upgrades last forever.", textStyle, With(UIStyle.Muted, ease));
+
+            const float cw = 420f, ch = 112f, gap = 16f;
+            int cols = Mathf.Clamp(Mathf.FloorToInt((vw - 80f + gap) / (cw + gap)), 1, 3);
+            float x0 = (vw - (cols * cw + (cols - 1) * gap)) * 0.5f, y0 = 380f;
+            for (int i = 0; i < Meta.Upgrades.Length; i++)
+            {
+                var u = Meta.Upgrades[i];
+                float x = x0 + (i % cols) * (cw + gap), y = y0 + (i / cols) * (ch + gap);
+                if (ArcaneSkin.Loaded) UIStyle.Nine(R(x, y, cw, ch), ArcaneSkin.Panel, s * 0.6f);
+                else UIStyle.DrawPanel(R(x, y, cw, ch));
+                int level = Meta.Level(u.Id);
+                string pips = u.MaxLevel > 1 ? $"  {level}/{u.MaxLevel}" : level > 0 ? "  OWNED" : "";
+                Label(R(x + 20f, y + 10f, cw - 170f, 30f), u.Name + pips, new GUIStyle(headStyle) { alignment = TextAnchor.MiddleLeft }, With(level > 0 ? UIStyle.Accent : UIStyle.Parchment, ease));
+                Label(R(x + 20f, y + 42f, cw - 170f, 60f), u.Text, new GUIStyle(textStyle) { alignment = TextAnchor.UpperLeft }, With(UIStyle.Muted, ease));
+                bool maxed = Meta.Maxed(u);
+                int cost = Meta.NextCost(u);
+                if (Button(x + cw - 140f, y + 30f, 120f, 52f, maxed ? "MAX" : cost.ToString(), !maxed && Meta.Essence >= cost, small: true))
+                    if (Meta.TryBuy(u)) Sfx.Play(Sfx.Lib.UpgradeBought);
+            }
+
+            // Core type.
+            int rows = (Meta.Upgrades.Length + cols - 1) / cols;
+            float cy = y0 + rows * (ch + gap) + 6f;
+            Label(R(0f, cy, vw, 28f), "CORE", headStyle, With(UIStyle.Muted, ease));
+            const float tw = 300f;
+            float tx = (vw - 3f * tw - 2f * gap) * 0.5f;
+            for (int i = 0; i < 3; i++)
+            {
+                var type = (Meta.CoreType)i;
+                bool owned = Meta.CoreOwned(type), active = Meta.ActiveCore == type;
+                if (Button(tx + i * (tw + gap), cy + 30f, tw, 56f, Meta.CoreNames[i], owned, owned ? null : "Buy it above", small: true, active: active))
+                    { Meta.ActiveCore = type; Sfx.Play(Sfx.Lib.Toggle); }
+            }
+            Label(R(0f, cy + 92f, vw, 26f), Meta.CoreTexts[(int)Meta.ActiveCore], textStyle, With(UIStyle.Parchment, ease));
+
+            if (Button((vw - 300f) * 0.5f, Mathf.Min(1080f - 96f, cy + 130f), 300f, 70f, "Back", true)) page = Page.Main;
+        }
+
+        /// <summary>The new run screen: difficulty, starting wave and what skipping ahead grants, then Start / Back.</summary>
+        void DrawNewRun(float ease)
+        {
+            float y = 300f;
+            DrawDifficulty(y, ease);
+            DrawStartWave(y + 270f, ease);
+
+            const float bw = 300f, bh = 76f, gap = 30f;
+            float bx = vw * 0.5f - bw - gap * 0.5f, by = 880f + 40f * (1f - ease);
+            if (Button(bx, by, bw, bh, "Back", true)) page = Page.Main;
+            if (Button(bx + bw + gap, by, bw, bh, "Start", true)) Play();
         }
 
         /// <summary>"&lt; NAME &gt;" picker with the difficulty's description under it.</summary>
@@ -81,30 +167,63 @@ namespace DungeonConveyor
             int i = Run.DifficultyIndex;
             var d = list[i];
             Label(R(0f, y, vw, 30f), "DIFFICULTY", headStyle, With(UIStyle.Muted, alpha));
-            const float aw = 64f, nw = 340f, h = 64f;
-            float x = (vw - nw) * 0.5f, ry = y + 34f;
-            if (Button(x - aw - 12f, ry, aw, h, "<", i > 0, small: true)) SetDifficulty(i - 1);
-            if (Button(x + nw + 12f, ry, aw, h, ">", i < list.Count - 1, small: true)) SetDifficulty(i + 1);
-            if (ArcaneSkin.Loaded) { var old = GUI.color; GUI.color = new Color(1f, 1f, 1f, alpha); UIStyle.Nine(R(x, ry, nw, h), ArcaneSkin.Banner, s); GUI.color = old; }
-            else UIStyle.DrawPanel(R(x, ry, nw, h));
             // Harder is redder.
             float t = list.Count > 1 ? i / (float)(list.Count - 1) : 0f;
             var col = Color.Lerp(new Color(0.55f, 0.9f, 0.5f), UIStyle.Danger, t);
-            Label(R(x, ry, nw, h), (d.Name ?? "").ToUpperInvariant(), smallButtonStyle, With(col, alpha));
-            Label(R(vw * 0.5f - 380f, ry + h + 10f, 760f, 120f), d.Description ?? "", textStyle, With(UIStyle.Parchment, alpha));
+            int pick = Picker(y + 34f, (d.Name ?? "").ToUpperInvariant(), col, alpha, i > 0, i < list.Count - 1);
+            if (pick != 0) SetDifficulty(i + pick);
+            Label(R(vw * 0.5f - 380f, y + 108f, 760f, 120f), d.Description ?? "", textStyle, With(UIStyle.Parchment, alpha));
+        }
+
+        /// <summary>Starting wave picker (the first wave of each map), with what the skipped maps hand out.</summary>
+        void DrawStartWave(float y, float alpha)
+        {
+            int stage = Run.StartStage;
+            Label(R(0f, y, vw, 30f), "STARTING WAVE", headStyle, With(UIStyle.Muted, alpha));
+            string name = $"WAVE {Run.FirstWaveOf(stage)}  ·  MAP {stage + 1}";
+            int pick = Picker(y + 34f, name, UIStyle.Accent, alpha, stage > 0, stage < Run.MaxStartStage);
+            if (pick != 0)
+            {
+                Run.StartStage = stage + pick;
+                PlayerPrefs.Save();
+            }
+
+            var settings = RunSettings.Instance;
+            int cards = (Run.FirstWaveOf(stage) - 1) / Mathf.Max(1, settings.WavesPerCard);
+            string text = stage == 0
+                ? "From the very beginning."
+                : $"Starts with {cards} random upgrade cards, +{settings.GoldPerSkippedMap * stage} gold, {settings.CrystalsPerSkippedMap * stage} crystals " +
+                  $"and the buildings the skipped maps' shops would have offered.";
+            if (stage == Run.DefaultStartStage) text += "  (Default for this difficulty.)";
+            Label(R(vw * 0.5f - 380f, y + 108f, 760f, 90f), text, textStyle, With(UIStyle.Parchment, alpha));
+        }
+
+        /// <summary>A "&lt; value &gt;" banner; returns -1 / +1 when an arrow is clicked.</summary>
+        int Picker(float y, string value, Color color, float alpha, bool canDown, bool canUp)
+        {
+            const float aw = 64f, nw = 400f, h = 64f;
+            float x = (vw - nw) * 0.5f;
+            int pick = 0;
+            if (Button(x - aw - 12f, y, aw, h, "<", canDown, small: true)) pick = -1;
+            if (Button(x + nw + 12f, y, aw, h, ">", canUp, small: true)) pick = 1;
+            if (ArcaneSkin.Loaded) { var old = GUI.color; GUI.color = new Color(1f, 1f, 1f, alpha); UIStyle.Nine(R(x, y, nw, h), ArcaneSkin.Banner, s); GUI.color = old; }
+            else UIStyle.DrawPanel(R(x, y, nw, h));
+            Label(R(x, y, nw, h), value, smallButtonStyle, With(color, alpha));
+            return pick;
         }
 
         void SetDifficulty(int i)
         {
             Run.DifficultyIndex = i;
+            Run.StartStage = -1; // follow the new difficulty's default starting wave
             PlayerPrefs.Save();
         }
 
         void Play()
         {
-            if (leaving) return;
+            if (leaving || !Application.isPlaying) return;
             leaving = true;
-            Run.Reset(); // a fresh run with the chosen difficulty
+            Run.Begin(); // a fresh run with the chosen difficulty and starting wave
             SceneManager.LoadScene(GameScene);
         }
 
@@ -121,7 +240,6 @@ namespace DungeonConveyor
 
         void OpenGallery()
         {
-            gallery = true;
             scroll = Vector2.zero;
             cards = Run.AllCards();
             SortCards();
@@ -155,7 +273,7 @@ namespace DungeonConveyor
             (Sort mode, string label)[] modes = { (Sort.RarityHighFirst, "Rarity: high first"), (Sort.RarityLowFirst, "Rarity: low first"), (Sort.Type, "By type") };
             // The sort row sits beside the title when there's room, else on its own row below it.
             const float sw = 250f, sh = 56f, titleEnd = 470f;
-            if (Button(px + pw - 60f - 64f, py + 34f, 64f, sh, "X", true, small: true)) gallery = false;
+            if (Button(px + pw - 60f - 64f, py + 34f, 64f, sh, "X", true, small: true)) page = Page.Main;
             float sx = px + pw - 60f - 3 * (sw + 12f) - 76f, sy = py + 34f, below = 0f;
             if (sx - 110f < px + titleEnd)
             {
@@ -261,6 +379,7 @@ namespace DungeonConveyor
             bool over = r.Contains(Event.current.mousePosition);
             bool down = enabled && over && Mouse.current != null && Mouse.current.leftButton.isPressed;
             bool clicked = enabled && GUI.Button(r, GUIContent.none, GUIStyle.none);
+            if (clicked) Sfx.Click();
             float alpha = GUI.color.a;
 
             if (Event.current.type == EventType.Repaint)

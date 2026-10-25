@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.03.00">
+	<object class="AudioFile" id="{1cafa17a-39cb-40eb-bf94-2bf1f15e973f}">
+		<property name="assetPath">
+			<value>DCFOLYMisc_Bong Hit One Quick Inhale CU Bubbles_PSE_FESS_WcJfo.wav</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>4.714666666666667</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{179e0851-96ef-43a9-bda8-0c183feb11e3}</destination>
+		</relationship>
+	</object>
+</objects>

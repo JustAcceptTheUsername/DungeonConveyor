@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.03.00">
+	<object class="AudioFile" id="{644d84b6-34ce-4b23-9f35-f0aaf5ef35c6}">
+		<property name="assetPath">
+			<value>DCBoulders_Tumble_Debris_PSEF.047.wav</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>4.7039999999999997</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{179e0851-96ef-43a9-bda8-0c183feb11e3}</destination>
+		</relationship>
+	</object>
+</objects>

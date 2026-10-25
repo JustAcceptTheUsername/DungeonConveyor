@@ -1,0 +1,777 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e3d8777c3c28e344ba7a2e1b5ad92826, type: 3}
+  m_Name: SoundLibrary
+  m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.SoundLibrary
+  MenuMusic:
+    Event: 
+    Volume: 1
+    Channel: 1
+    MinGap: 0
+    MaxVoices: 1
+    Positional: 0
+  GameMusic:
+    Event: 
+    Volume: 1
+    Channel: 1
+    MinGap: 0
+    MaxVoices: 1
+    Positional: 0
+  BossMusic:
+    Event: 
+    Volume: 1
+    Channel: 1
+    MinGap: 0
+    MaxVoices: 1
+    Positional: 0
+  GameAmbience:
+    Event: event:/DistorterAmbience
+    Volume: 1
+    Channel: 2
+    MinGap: 0
+    MaxVoices: 1
+    Positional: 0
+  MenuAmbience:
+    Event: 
+    Volume: 1
+    Channel: 2
+    MinGap: 0
+    MaxVoices: 1
+    Positional: 0
+  Buildings:
+  - BuildingId: Conveyor
+    Shoot:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: Wall
+    Shoot:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: LandMine
+    Shoot:
+      Event: event:/Boulders
+      Volume: 1
+      Channel: 0
+      MinGap: 0.08
+      MaxVoices: 3
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: Splitter
+    Shoot:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: Miner
+    Shoot:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: Turret
+    Shoot:
+      Event: event:/Gunshot
+      Volume: 1
+      Channel: 0
+      MinGap: 0.06
+      MaxVoices: 4
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: Collector
+    Shoot:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: Flamethrower
+    Shoot:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Loop:
+      Event: event:/Flamethrower
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: Mortar
+    Shoot:
+      Event: event:/GunCannon
+      Volume: 1
+      Channel: 0
+      MinGap: 0.1
+      MaxVoices: 3
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: event:/Boulders
+      Volume: 1
+      Channel: 0
+      MinGap: 0.08
+      MaxVoices: 3
+      Positional: 1
+  - BuildingId: LaserTower
+    Shoot:
+      Event: event:/Ray
+      Volume: 1
+      Channel: 0
+      MinGap: 0.35
+      MaxVoices: 2
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: MineShaft
+    Shoot:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: MissileLauncher
+    Shoot:
+      Event: event:/Rocket
+      Volume: 1
+      Channel: 0
+      MinGap: 0.1
+      MaxVoices: 3
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: event:/Boulders
+      Volume: 1
+      Channel: 0
+      MinGap: 0.08
+      MaxVoices: 3
+      Positional: 1
+  - BuildingId: TeslaCoil
+    Shoot:
+      Event: event:/Sizzling2
+      Volume: 1
+      Channel: 0
+      MinGap: 0.1
+      MaxVoices: 3
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - BuildingId: ShieldGenerator
+    Shoot:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Loop:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0
+      MaxVoices: 8
+      Positional: 1
+    Impact:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  DefaultShoot:
+    Event: event:/Gunshot
+    Volume: 1
+    Channel: 0
+    MinGap: 0.06
+    MaxVoices: 4
+    Positional: 1
+  CoreShoot:
+    Event: event:/GunCannon
+    Volume: 1
+    Channel: 0
+    MinGap: 0.1
+    MaxVoices: 2
+    Positional: 1
+  Explosion:
+    Event: event:/Boulders
+    Volume: 1
+    Channel: 0
+    MinGap: 0.08
+    MaxVoices: 3
+    Positional: 1
+  MineBlast:
+    Event: event:/Boulders
+    Volume: 1
+    Channel: 0
+    MinGap: 0.08
+    MaxVoices: 3
+    Positional: 1
+  BulletHit:
+    Event: 
+    Volume: 1
+    Channel: 0
+    MinGap: 0.05
+    MaxVoices: 4
+    Positional: 1
+  ShieldBreak:
+    Event: event:/DCFOLYProp_Glass Vial Drop on Concrete Small Bounces Clink_PSE_FESS_NTCV8
+    Volume: 1
+    Channel: 0
+    MinGap: 0.1
+    MaxVoices: 3
+    Positional: 1
+  Place:
+    Event: event:/Thump2
+    Volume: 1
+    Channel: 0
+    MinGap: 0.05
+    MaxVoices: 3
+    Positional: 1
+  PlaceBelt:
+    Event: event:/Thump
+    Volume: 1
+    Channel: 0
+    MinGap: 0.05
+    MaxVoices: 3
+    Positional: 1
+  Demolish:
+    Event: event:/DCFOLYMisc_Knuckle Crack Hand 2 Variations_PSE_FESS_kK6i9
+    Volume: 1
+    Channel: 0
+    MinGap: 0.05
+    MaxVoices: 3
+    Positional: 1
+  BuildingDestroyed:
+    Event: event:/Boulders
+    Volume: 1
+    Channel: 0
+    MinGap: 0.1
+    MaxVoices: 3
+    Positional: 1
+  CantPlace:
+    Event: 
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0
+  CrystalMined:
+    Event: event:/DCFOLYProp_Glass Vial Drop on Concrete Small Bounces Clink_PSE_FESS_NTCV8
+    Volume: 1
+    Channel: 0
+    MinGap: 0.25
+    MaxVoices: 2
+    Positional: 1
+  CrystalSold:
+    Event: event:/Coins
+    Volume: 1
+    Channel: 0
+    MinGap: 0.12
+    MaxVoices: 3
+    Positional: 1
+  CrystalFedToTower:
+    Event: event:/Sizzling
+    Volume: 1
+    Channel: 0
+    MinGap: 0.2
+    MaxVoices: 2
+    Positional: 1
+  AlloyFused:
+    Event: event:/DCFOLYProp_Glass Vial Drop on Concrete Small Bounces Clink_PSE_FESS_NTCV8
+    Volume: 1
+    Channel: 0
+    MinGap: 0.2
+    MaxVoices: 2
+    Positional: 1
+  CoreHit:
+    Event: event:/Thump2
+    Volume: 1
+    Channel: 0
+    MinGap: 0.08
+    MaxVoices: 3
+    Positional: 1
+  CoreDestroyed:
+    Event: event:/BossGrowl
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  Enemies:
+  - EnemyId: Crawler
+    Land:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Death:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - EnemyId: CrystalSpider
+    Land:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Death:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - EnemyId: Wasp
+    Land:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Death:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - EnemyId: AcidSpitter
+    Land:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Death:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  - EnemyId: Brute
+    Land:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+    Death:
+      Event: 
+      Volume: 1
+      Channel: 0
+      MinGap: 0.05
+      MaxVoices: 4
+      Positional: 1
+  DefaultLand:
+    Event: event:/AntSkittering
+    Volume: 1
+    Channel: 0
+    MinGap: 0.2
+    MaxVoices: 2
+    Positional: 1
+  DefaultDeath:
+    Event: event:/Thump
+    Volume: 1
+    Channel: 0
+    MinGap: 0.05
+    MaxVoices: 4
+    Positional: 1
+  MeteorImpact:
+    Event: event:/Boulders
+    Volume: 1
+    Channel: 0
+    MinGap: 0.15
+    MaxVoices: 3
+    Positional: 1
+  EliteSpawn:
+    Event: event:/Snarl
+    Volume: 1
+    Channel: 0
+    MinGap: 0.5
+    MaxVoices: 1
+    Positional: 0
+  Split:
+    Event: event:/Snarl
+    Volume: 1
+    Channel: 0
+    MinGap: 0.2
+    MaxVoices: 2
+    Positional: 1
+  BeltWrecked:
+    Event: 
+    Volume: 1
+    Channel: 0
+    MinGap: 0.1
+    MaxVoices: 3
+    Positional: 1
+  BossIncoming:
+    Event: event:/BossGrowl
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  BossLand:
+    Event: event:/BossGrowl
+    Volume: 1
+    Channel: 0
+    MinGap: 0.5
+    MaxVoices: 1
+    Positional: 1
+  BossDeath:
+    Event: event:/Boulders
+    Volume: 1
+    Channel: 0
+    MinGap: 0.5
+    MaxVoices: 1
+    Positional: 1
+  WaveStart:
+    Event: event:/Alert
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  WaveCleared:
+    Event: event:/Notification
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  EliteWave:
+    Event: event:/Snarl
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  LandingSiteMoved:
+    Event: event:/Alert
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  MapCleared:
+    Event: event:/Notification
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  GameOver:
+    Event: event:/BossGrowl
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  Combo:
+    Event: event:/Swish
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  CardDeal:
+    Event: event:/Swish
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  CardPick:
+    Event: event:/Swoosh
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  RelicGained:
+    Event: event:/Notification
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  SpireClaimed:
+    Event: event:/Notification
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  ShopUnlock:
+    Event: event:/Coins
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  UpgradeBought:
+    Event: event:/Coins
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  StepDone:
+    Event: event:/Notification
+    Volume: 1
+    Channel: 0
+    MinGap: 0.4
+    MaxVoices: 1
+    Positional: 0
+  Click:
+    Event: event:/ButtonClick
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0
+  Hover:
+    Event: 
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0
+  Select:
+    Event: event:/ButtonClick
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0
+  Cancel:
+    Event: 
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0
+  OpenWindow:
+    Event: event:/Swish
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0
+  CloseWindow:
+    Event: event:/Swoosh
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0
+  Toggle:
+    Event: event:/ButtonClick
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0
+  SliderPreview:
+    Event: event:/Coins
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0
+  PageTurn:
+    Event: event:/Swish
+    Volume: 1
+    Channel: 3
+    MinGap: 0.03
+    MaxVoices: 4
+    Positional: 0

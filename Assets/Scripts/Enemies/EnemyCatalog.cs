@@ -3,6 +3,12 @@ using UnityEngine;
 
 namespace DungeonConveyor
 {
+    [System.Flags]
+    public enum EnemyTrait { None = 0, Fast = 1, Armored = 2, Flying = 4, Saboteur = 8 }
+
+    /// <summary>Modifier on an elite wave: every enemy in it has it.</summary>
+    public enum EliteModifier { None, Shielded, Splitting, Saboteurs, Swift, Regenerating }
+
     /// <summary>
     /// Every enemy type. Lives at Resources/EnemyCatalog.asset and is kept in sync with Assets/Models/Enemies by the
     /// editor (EnemyCatalogSync); stats can be tuned in the Inspector.
@@ -29,6 +35,9 @@ namespace DungeonConveyor
             public float Weight = 1f;
             [Tooltip("Drawn this far above the ground (fliers).")]
             public float Hover;
+            [Tooltip("Fast: 35% quicker. Armored: half damage from bullets and lasers. Flying: flies straight over walls " +
+                     "and cliffs, safe from mines and flames. Saboteur: goes for your belts first and wrecks them.")]
+            public EnemyTrait Traits;
 
             [System.NonSerialized] public Sprite[] Sprites; // per Dir, rendered at runtime by GameArt
         }

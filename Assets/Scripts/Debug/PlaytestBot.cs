@@ -39,6 +39,8 @@ namespace DungeonConveyor
         {
             if (started || !HasArg("-playtest")) return;
             started = true;
+            Meta.Disabled = true; // playtests share the player's PlayerPrefs: never touch their save
+            Sfx.Muted = true;
             games = Mathf.Max(1, (int)ArgFloat("-playtestGames", 3));
             minutes = ArgFloat("-playtestMinutes", 10f);
             speed = ArgFloat("-playtestSpeed", 8f);
@@ -112,10 +114,18 @@ namespace DungeonConveyor
             waves.AutoPickCards = true;
             Run.UnlockAll(build.Catalog); // the bot tests every building, shop or not
 
+            int elites = 0, siteShifts = 0, wrecked = 0, spiresClaimed = 0;
+            waves.WaveStarted += (w, m) => { if (m != EliteModifier.None) { elites++; Line($"  {Time.time / 60f,4:0.0}m wave {w} is ELITE: {m}"); } };
+            waves.LandingSitesChanged += added => { siteShifts++; Line($"  {Time.time / 60f,4:0.0}m landing site {(added ? "added" : "moved")} ({map.Spawns.Count} sites)"); };
+            waves.BeltWrecked += at => wrecked++;
+            var spires = GetComponent<SpireRelics>();
+            if (spires != null) spires.Claimed += (at, relic) => { spiresClaimed++; Line($"  spire claimed: {(relic != null ? relic.Title : "(no relic left)")}"); };
+
             WallTests();
             WallLineTest();
             BuildEconomy();
             CheckRules();
+            FeatureChecks();
 
             float end = Time.time + minutes * 60f;
             float nextBuy = 0f, nextSample = 0f;
@@ -154,6 +164,11 @@ namespace DungeonConveyor
                 Check("ore patches deplete", minedPatch.Remaining < patch0Start,
                     $"mined patch {patch0Start} -> {minedPatch.Remaining}{(depletedAt >= 0f ? $", ran dry at {depletedAt / 60f:0.0} min" : "")}");
             Check("enemies spawned", waves.Kills + waves.Leaked + Enemy.All.Count > 0, $"{waves.Wave} waves, {waves.Kills} killed, {waves.Leaked} reached the Core");
+            if (waves.Wave >= waves.EliteFrom + 3) Check("elite waves come", elites > 0, $"{elites} elite waves");
+            if (waves.Wave - Run.FirstWave >= waves.ShiftLandingEvery + 1) Check("landing sites shift", siteShifts > 0, $"{siteShifts} changes, {map.Spawns.Count} sites now");
+            Line($"  extras: {wrecked} belts wrecked by saboteurs, {spiresClaimed} spires claimed, relics: {Run.Relics.Count}, synergies: {Run.Synergies.Count}, alloys sold: {flow.DeliveredAlloys}, crystals fed to towers: {flow.FedToTowers}");
+            if (Run.IsBossWave(waves.Wave) && !build.Core.Destroyed && waves.Alive == 0)
+                Check("boss drops a relic", Run.Relics.Count > spiresClaimed, $"{Run.Relics.Count} relics ({spiresClaimed} from spires)");
             if (!defenceless)
                 Check("towers kill enemies", waves.Kills > 0, $"{combat.DamageDealt:0} damage dealt");
             if (defenceless)
@@ -168,25 +183,87 @@ namespace DungeonConveyor
             else Finish();
         }
 
+        /// <summary>Direct checks of the new systems that the bot's normal play may not reach.</summary>
+        void FeatureChecks()
+        {
+            if (map.Spawns.Count > 0)
+            {
+                var landing = map.Spawns[0].Landing;
+                Check("fliers have a route", waves.Flows.Air.Distance(landing) != FlowField.Unreachable, $"air route {waves.Flows.Air.Distance(landing)} steps vs ground {waves.Flow.Distance(landing)}");
+                if (build.Conveyors.Count > 0)
+                    Check("saboteurs can reach belts", waves.Flows.Belts.Distance(landing) != FlowField.Unreachable, $"{waves.Flows.Belts.Distance(landing)} steps to the nearest belt");
+            }
+            Check("pentagon spires exist", CountPentagons() == 12, $"{CountPentagons()} spires");
+
+            // A crystal fed to a tower boosts it.
+            var turret = build.Catalog.Find("Turret");
+            Tower tower = null;
+            for (int x = 0; x < map.Width && tower == null; x++)
+            {
+                var c = new Vector2Int(x, 0);
+                if (map.DistanceToBase(c) < 6f || !build.CanPlace(turret, c, out _, out _)) continue;
+                tower = build.TryPlace(turret, c) as Tower;
+            }
+            if (tower != null)
+            {
+                bool took = tower.TryAccept(new BeltItem { Kind = 0 });
+                Check("crystals boost towers", took && tower.AnyBoost, $"boost {tower.Boost[0]:0}s speed / {tower.Boost[1]:0}s range / {tower.Boost[2]:0}s damage");
+                build.RemoveBuilding(tower, refund: true);
+            }
+
+            // Synergy and relic cards apply.
+            int relicsBefore = Run.Relics.Count;
+            var relic = Run.RandomRelic();
+            if (relic != null)
+            {
+                Run.Apply(relic);
+                Check("relics apply", Run.Relics.Count == relicsBefore + 1, relic.Title);
+            }
+            var syn = Run.MakeSynergy(Run.Synergy.ChainReaction);
+            Run.Apply(syn);
+            Check("synergies apply", Run.Has(Run.Synergy.ChainReaction), syn.Title);
+        }
+
+        int CountPentagons()
+        {
+            int n = 0;
+            for (int x = 0; x < map.Width; x++) if (map.IsPentagon(new Vector2Int(x, 0))) n++;
+            return n;
+        }
+
         void DescribeMap()
         {
-            int cells = 0;
-            for (int x = 0; x < map.Width; x++)
-                for (int y = 0; y < map.Height; y++)
-                    if (map.Exists[x, y]) cells++;
-            Line($"  map: {cells} tiles, {map.Bridges.Count} spawn bridges, {map.Patches.Count} ore patches");
+            Line($"  planet: {map.Width * map.Height} hex tiles (frequency {map.N}), {map.Spawns.Count} landing sites, {map.Patches.Count} ore patches");
             var kinds = new HashSet<int>();
             foreach (var p in map.Patches)
             {
                 kinds.Add(p.Kind);
                 var type = IsoGrid.OreTypeOf(p.Kind);
-                Line($"    {type.Name,-9} {p.Cells.Count} tiles, {p.Initial,4} crystals, {type.Value} gold each, {Vector2.Distance(p.Cells[0], map.BaseCenter):0} cells from base");
+                Line($"    {type.Name,-9} {p.Cells.Count} tiles, {p.Initial,4} crystals, {type.Value} gold each, {map.DistanceToBase(p.Cells[0]):0} cells from base");
             }
             Check("ore patches vary", kinds.Count > 1 || map.Patches.Count < 3, $"{kinds.Count} ore types across {map.Patches.Count} patches");
             int unreachable = 0;
-            foreach (var b in map.Bridges)
-                if (waves.Flow.Distance(b.Landing) == FlowField.Unreachable) unreachable++;
-            Check("every spawn can reach the Core", unreachable == 0, $"{map.Bridges.Count - unreachable}/{map.Bridges.Count} reachable");
+            foreach (var s in map.Spawns)
+                if (waves.Flow.Distance(s.Landing) == FlowField.Unreachable) unreachable++;
+            Check("every spawn can reach the Core", unreachable == 0, $"{map.Spawns.Count - unreachable}/{map.Spawns.Count} reachable");
+            Check("planet neighbours are symmetric", NeighboursSymmetric(out string bad), bad ?? "every step can be walked back");
+        }
+
+        /// <summary>Stepping to any neighbour and back returns to the same cell.</summary>
+        bool NeighboursSymmetric(out string bad)
+        {
+            bad = null;
+            for (int x = 0; x < map.Width; x++)
+                for (int y = 0; y < map.Height; y++)
+                {
+                    var c = new Vector2Int(x, y);
+                    for (int d = 0; d < map.Sides(c); d++)
+                    {
+                        var n = map.Neighbour(c, d);
+                        if (n == c || map.DirTo(n, c) < 0) { bad = $"{c} side {d} -> {n} doesn't lead back"; return false; }
+                    }
+                }
+            return true;
         }
 
         void Sample()
@@ -204,7 +281,7 @@ namespace DungeonConveyor
             var refiner = build.Catalog.Find(BuildingCatalog.RefinerId);
             var splitter = build.Catalog.Find(BuildingCatalog.SplitterId);
             var patches = new List<IsoGrid.OrePatch>(map.Patches);
-            patches.Sort((a, b) => Vector2.Distance(a.Cells[0], map.BaseCenter).CompareTo(Vector2.Distance(b.Cells[0], map.BaseCenter)));
+            patches.Sort((a, b) => map.DistanceToBase(a.Cells[0]).CompareTo(map.DistanceToBase(b.Cells[0])));
 
             int lines = 0;
             foreach (var patch in patches)
@@ -238,8 +315,8 @@ namespace DungeonConveyor
                 Vector2Int joinBelt = default;
                 bool BesideBeltSide(Vector2Int c)
                 {
-                    foreach (var d in Dir.Offsets)
-                        if (map.BuildingAt(c + d) is Conveyor b && b.InCell != c && b.OutCell != c && Mathf.Abs(b.Level - map.Heights[c.x, c.y]) <= 1)
+                    for (int d = 0; d < map.Sides(c); d++)
+                        if (map.BuildingAt(map.Neighbour(c, d)) is Conveyor b && b.InCell != c && b.OutCell != c && Mathf.Abs(b.Level - map.Heights[c.x, c.y]) <= 1)
                         {
                             joinBelt = b.Cell;
                             return true;
@@ -259,21 +336,29 @@ namespace DungeonConveyor
         /// <summary>Draws an L-shaped wall line in one go and checks the pieces snapped together, then removes it.</summary>
         void WallLineTest()
         {
-            var r = Vector2Int.right;
-            var u = Vector2Int.up;
-            for (int x = 2; x < map.Width - 6; x++)
-                for (int y = 2; y < map.Height - 6; y++)
+            for (int x = 0; x < map.Width; x++)
+                for (int y = 0; y < map.Height; y++)
                 {
                     var s = new Vector2Int(x, y);
-                    var path = new List<Vector2Int> { s, s + r, s + r * 2, s + r * 3, s + r * 3 + u, s + r * 3 + u * 2 };
-                    bool free = Vector2.Distance(s, map.BaseCenter) > 8f;
+                    if (map.IsPentagon(s)) continue;
+                    // Three steps straight on (out of the side opposite the one we came in by), a turn, two more.
+                    var path = new List<Vector2Int> { s, map.Neighbour(s, 0) };
+                    for (int i = 0; i < 4; i++)
+                    {
+                        var cur = path[path.Count - 1];
+                        int back = map.DirTo(cur, path[path.Count - 2]);
+                        if (back < 0) break;
+                        path.Add(map.Neighbour(cur, i == 2 ? Dir.Wrap(back + 2) : Dir.Opposite(back)));
+                    }
+                    if (path.Count != 6) continue;
+                    bool free = map.DistanceToBase(s) > 8f && new HashSet<Vector2Int>(path).Count == path.Count;
                     foreach (var c in path) free &= BeltFree(c, null) && !IsBesideCore(c);
                     if (!free) continue;
 
                     int built = build.TryPlaceWalls(path);
                     if (built == 0) continue;
-                    var straight = map.BuildingAt(s + r) as Wall;
-                    var corner = map.BuildingAt(s + r * 3) as Wall;
+                    var straight = map.BuildingAt(path[1]) as Wall;
+                    var corner = map.BuildingAt(path[3]) as Wall;
                     Check("wall line drawn in one drag", built == path.Count, $"{built}/{path.Count} walls along an L at {s}");
                     Check("walls snap together", straight != null && corner != null && straight.PieceCount == 2 && corner.PieceCount == 3,
                         $"straight tile {(straight != null ? straight.PieceCount : 0)} pieces (want 2), corner {(corner != null ? corner.PieceCount : 0)} pieces (want 3: two halves + post)");
@@ -289,18 +374,21 @@ namespace DungeonConveyor
             Building best = null;
             int bestOre = 0;
             Vector2Int bestOrigin = default;
+            // Anchors on the patch and around it (a footprint anchored next to the ore can still cover it).
+            var anchors = new HashSet<Vector2Int>();
             foreach (var c in patch.Cells)
-                for (int dx = 1 - miner.Size.x; dx <= 0; dx++)
-                    for (int dy = 1 - miner.Size.y; dy <= 0; dy++)
-                    {
-                        var o = c + new Vector2Int(dx, dy);
-                        if (!build.CanPlace(miner, o, out _, out _)) continue;
-                        int ore = 0;
-                        for (int x = 0; x < miner.Size.x; x++)
-                            for (int y = 0; y < miner.Size.y; y++)
-                                if (map.IsOre(o + new Vector2Int(x, y))) ore++;
-                        if (ore > bestOre) { bestOre = ore; bestOrigin = o; }
-                    }
+            {
+                anchors.Add(c);
+                for (int d = 0; d < map.Sides(c); d++) anchors.Add(map.Neighbour(c, d));
+            }
+            foreach (var o in anchors)
+            {
+                if (!build.CanPlace(miner, o, out _, out _)) continue;
+                int ore = 0;
+                foreach (var c in map.Footprint(o, miner.Size))
+                    if (map.IsOre(c)) ore++;
+                if (ore > bestOre) { bestOre = ore; bestOrigin = o; }
+            }
             if (bestOre > 0) best = build.TryPlace(miner, bestOrigin);
             return best;
         }
@@ -340,19 +428,17 @@ namespace DungeonConveyor
             // Put the splitter so it touches the end of the input belt without overlapping it.
             Building s = null;
             var end = input[input.Count - 1];
-            foreach (var d in Dir.Offsets)
+            for (int d = 0; d < map.Sides(end) && s == null; d++)
             {
-                for (int dx = 1 - splitter.Size.x; dx <= 0 && s == null; dx++)
-                    for (int dy = 1 - splitter.Size.y; dy <= 0 && s == null; dy++)
-                    {
-                        var o = end + d + new Vector2Int(dx, dy);
-                        bool overlaps = false;
-                        foreach (var c in input)
-                            if (c.x >= o.x && c.y >= o.y && c.x < o.x + splitter.Size.x && c.y < o.y + splitter.Size.y) overlaps = true;
-                        if (overlaps || !build.CanPlace(splitter, o, out _, out _)) continue;
-                        s = build.TryPlace(splitter, o);
-                    }
-                if (s != null) break;
+                var n = map.Neighbour(end, d);
+                for (int e = -1; e < map.Sides(n) && s == null; e++)
+                {
+                    var o = e < 0 ? n : map.Neighbour(n, e);
+                    var cells = map.Footprint(o, splitter.Size);
+                    // It must touch the end of the input belt without overlapping the belt.
+                    if (!cells.Contains(n) || cells.Exists(input.Contains) || !build.CanPlace(splitter, o, out _, out _)) continue;
+                    s = build.TryPlace(splitter, o);
+                }
             }
             if (s == null)
             {
@@ -378,27 +464,26 @@ namespace DungeonConveyor
             return splitterOutputs.Count > 0;
         }
 
-        static bool Touches(Vector2Int c, HashSet<Vector2Int> cells)
+        bool Touches(Vector2Int c, HashSet<Vector2Int> cells)
         {
-            foreach (var d in Dir.Offsets) if (cells.Contains(c + d)) return true;
+            for (int d = 0; d < map.Sides(c); d++) if (cells.Contains(map.Neighbour(c, d))) return true;
             return false;
         }
 
         bool IsBesideCore(Vector2Int c)
         {
-            foreach (var d in Dir.Offsets) if (map.IsBase(c + d)) return true;
+            for (int d = 0; d < map.Sides(c); d++) if (map.IsBase(map.Neighbour(c, d))) return true;
             return false;
         }
 
         IEnumerable<Vector2Int> Around(Building b)
         {
-            for (int x = 0; x < b.Size.x; x++)
-                for (int y = 0; y < b.Size.y; y++)
-                    foreach (var d in Dir.Offsets)
-                    {
-                        var c = b.Origin + new Vector2Int(x, y) + d;
-                        if (!b.Covers(c)) yield return c;
-                    }
+            foreach (var cell in b.Cells)
+                for (int d = 0; d < map.Sides(cell); d++)
+                {
+                    var c = map.Neighbour(cell, d);
+                    if (!b.Covers(c)) yield return c;
+                }
         }
 
         List<Vector2Int> RouteBelt(IEnumerable<Vector2Int> starts, System.Func<Vector2Int, bool> goal, HashSet<Vector2Int> avoid)
@@ -424,9 +509,9 @@ namespace DungeonConveyor
                     path.Reverse();
                     return path;
                 }
-                foreach (var d in Dir.Offsets)
+                for (int d = 0; d < map.Sides(c); d++)
                 {
-                    var n = c + d;
+                    var n = map.Neighbour(c, d);
                     if (from.ContainsKey(n) || !BeltFree(n, avoid) || Mathf.Abs(map.Heights[n.x, n.y] - map.Heights[c.x, c.y]) > 1) continue;
                     from[n] = c;
                     queue.Enqueue(n);
@@ -436,7 +521,7 @@ namespace DungeonConveyor
         }
 
         bool BeltFree(Vector2Int c, HashSet<Vector2Int> avoid) =>
-            map.HasCell(c) && !map.IsBase(c) && !map.IsSpawn(c) && !map.IsOre(c) && map.BuildingAt(c) == null && (avoid == null || !avoid.Contains(c));
+            map.HasCell(c) && !map.IsPentagon(c) && !map.IsBase(c) && !map.IsSpawn(c) && !map.IsOre(c) && map.BuildingAt(c) == null && (avoid == null || !avoid.Contains(c));
 
         string Reason(BuildingCatalog.Entry e, Vector2Int o)
         {
@@ -463,9 +548,8 @@ namespace DungeonConveyor
 
         bool NearBelt(Vector2Int c, int r)
         {
-            for (int dx = -r; dx <= r; dx++)
-                for (int dy = -r; dy <= r; dy++)
-                    if (map.BuildingAt(c + new Vector2Int(dx, dy)) is Conveyor) return true;
+            foreach (var belt in build.Conveyors)
+                if (map.Distance(c, belt.Cell) <= r) return true;
             return false;
         }
 
@@ -474,9 +558,9 @@ namespace DungeonConveyor
         {
             waves.Flow.Rebuild();
             var cells = new List<Vector2Int>();
-            foreach (var b in map.Bridges)
+            foreach (var s in map.Spawns)
             {
-                var c = b.Landing;
+                var c = s.Landing;
                 for (int guard = 0; guard < 400; guard++)
                 {
                     if (!cells.Contains(c)) cells.Add(c);
@@ -495,19 +579,19 @@ namespace DungeonConveyor
         void WallTests()
         {
             var wall = build.Catalog.Find("Wall");
-            if (map.Bridges.Count == 0 || wall == null) return;
-            var landing = map.Bridges[0].Landing;
+            if (map.Spawns.Count == 0 || wall == null) return;
+            var landing = map.Spawns[0].Landing;
             waves.Flow.Rebuild();
             int before = waves.Flow.Distance(landing);
 
             var ring = new List<Vector2Int>();
-            for (int x = -1; x <= IsoGrid.BaseSize; x++)
-                for (int y = -1; y <= IsoGrid.BaseSize; y++)
+            foreach (var b in map.BaseCells(0))
+                for (int d = 0; d < map.Sides(b); d++)
                 {
-                    var c = map.BaseOrigin + new Vector2Int(x, y);
-                    if (!map.IsBase(c) && IsBesideCore(c) && waves.Flow.Distance(c) == 0) ring.Add(c);
+                    var c = map.Neighbour(b, d);
+                    if (!map.IsBase(c) && !ring.Contains(c) && waves.Flow.Distance(c) == 0) ring.Add(c);
                 }
-            ring.Sort((a, b) => Vector2.Distance(b, landing).CompareTo(Vector2.Distance(a, landing)));
+            ring.Sort((a, b) => map.Distance(b, landing).CompareTo(map.Distance(a, landing)));
 
             var walls = new List<Building>();
             for (int i = 1; i < ring.Count; i++)
@@ -567,21 +651,19 @@ namespace DungeonConveyor
             int bestScore = 0;
             Vector2Int best = default;
             foreach (var belt in build.Conveyors)
-                foreach (var d in Dir.Offsets)
-                    for (int dx = 1 - e.Size.x; dx <= 0; dx++)
-                        for (int dy = 1 - e.Size.y; dy <= 0; dy++)
-                        {
-                            var o = belt.Cell + d + new Vector2Int(dx, dy);
-                            if (!build.CanPlace(e, o, out _, out _)) continue;
-                            var center = (Vector2)o + (Vector2)(e.Size - Vector2Int.one) * 0.5f;
-                            int score = 0;
-                            foreach (var c in path)
-                            {
-                                float dist = Vector2.Distance(c, center);
-                                if (dist <= e.Range && (e.Attack != AttackKind.Mortar || dist >= combat.MortarMinRange)) score++;
-                            }
-                            if (score > bestScore) { bestScore = score; best = o; }
-                        }
+                for (int d = 0; d < map.Sides(belt.Cell); d++)
+                {
+                    var o = map.Neighbour(belt.Cell, d);
+                    if (!build.CanPlace(e, o, out _, out _)) continue;
+                    var center = map.FootprintUp(o, e.Size);
+                    int score = 0;
+                    foreach (var c in path)
+                    {
+                        float dist = map.Arc(map.Up(c), center);
+                        if (dist <= e.Range && (e.Attack != AttackKind.Mortar || dist >= combat.MortarMinRange)) score++;
+                    }
+                    if (score > bestScore) { bestScore = score; best = o; }
+                }
             if (bestScore < 2 || build.TryPlace(e, best) == null) return false;
             Bought(e.Id);
             return true;
@@ -598,9 +680,9 @@ namespace DungeonConveyor
         {
             // A free tile next to the enemy path, about a third of the way from the Core.
             for (int i = path.Count * 2 / 3; i >= 0; i--)
-                foreach (var d in Dir.Offsets)
+                for (int d = 0; d < map.Sides(path[i]); d++)
                 {
-                    var c = path[i] + d;
+                    var c = map.Neighbour(path[i], d);
                     if (!BeltFree(c, null) || path.Contains(c)) continue;
                     if (build.TryPlaceBelt(new List<Vector2Int> { c }) == 1) return;
                 }

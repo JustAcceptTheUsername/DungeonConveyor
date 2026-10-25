@@ -1,105 +1,63 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace DungeonConveyor
 {
     /// <summary>
-    /// Live 3D building models standing in the 2D isometric world (BuildingCatalog.LiveModels).
-    /// - Each model is turned by the inverse of ModelArt's view angle and scaled to world units, so the main camera
-    ///   (looking straight down +Z) sees it exactly as ModelArt's sprite would look, pivot on the same point.
-    /// - Sorting: its materials move to the transparent queue and its renderers take the building's sortingOrder, so
-    ///   it is painted in the same back-to-front order as the sprites. Its depth sits behind the sprite plane (z = 0),
-    ///   so sprites painted after it (terrain and enemies in front) still cover it; between models the depth is their
-    ///   true 3D depth, so they also hide their own back faces and each other correctly.
-    /// - Lighting: once every sprite is baked, the scene's directional lights are turned with the models and a key
-    ///   light like ModelArt's is added, so models are lit from the same directions as the baked sprites.
+    /// 3D models standing on the planet. A model sits with its origin on a point of a cell, upright on the ground
+    /// there, its +X along the cell's right and +Z along its forward (side 0) (1 model unit = 1 cell).
     /// </summary>
     public static class BuildingModels
     {
-        const float DepthBase = 50f; // keeps every model behind the sprites at z = 0
-
-        static readonly Dictionary<Material, Material> sorted = new Dictionary<Material, Material>();
-        static Light keyLight;
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics()
-        {
-            sorted.Clear();
-            keyLight = null;
-        }
-
-        public static bool Enabled => BuildingCatalog.Instance != null && BuildingCatalog.Instance.LiveModels;
-
-        static Quaternion ToWorld => Quaternion.Inverse(ModelArt.ViewRotation);
-
         /// <summary>
-        /// Instantiates the model with its origin on grid point `grid` at elevation `level`, under parent. scale and
-        /// yaw are in the model's own axes, as in ModelArt.Render. Returns the model instance.
+        /// Instantiates the model at `offset` from a cell's centre (in its frame) at elevation `level`, under parent.
+        /// scale and yaw are in the model's own axes. Returns the model instance.
         /// </summary>
-        public static GameObject Spawn(IsoGrid map, GameObject prefab, Vector2 grid, float level, Vector3 scale, float yaw, int order, Transform parent)
+        public static GameObject Spawn(IsoGrid map, GameObject prefab, Vector2Int cell, Vector2 offset, float level, Vector3 scale, float yaw, Transform parent) =>
+            Spawn(prefab, map.CellPoint(cell, offset, level), map.CellFrame(cell, offset), scale, yaw, parent);
+
+        /// <summary>Instantiates the model at a world position and ground frame (+Y up), under parent.</summary>
+        public static GameObject Spawn(GameObject prefab, Vector3 position, Quaternion frame, Vector3 scale, float yaw, Transform parent)
         {
             var root = new GameObject(prefab.name + " (model)").transform;
             root.SetParent(parent, false);
-            root.SetPositionAndRotation(Position(map, grid, level), ToWorld);
-            root.localScale = Vector3.one * ModelArt.WorldPerModelUnit;
+            root.SetPositionAndRotation(position, frame);
 
             var model = Object.Instantiate(prefab, root, false);
             model.transform.localPosition = Vector3.zero;
             model.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
             model.transform.localScale = scale;
+            PlanetArt.StripColliders(model);
             foreach (var r in model.GetComponentsInChildren<Renderer>(true))
             {
-                r.sortingOrder = order;
                 r.shadowCastingMode = ShadowCastingMode.Off;
                 r.receiveShadows = false;
-                var mats = r.sharedMaterials;
-                for (int i = 0; i < mats.Length; i++) if (mats[i] != null) mats[i] = Sorted(mats[i]);
-                r.sharedMaterials = mats;
             }
             return model;
         }
 
-        /// <summary>
-        /// World position of a grid point: x and y where the sprites put it; z its depth along the view, so models
-        /// further back are further away.
-        /// </summary>
-        public static Vector3 Position(IsoGrid map, Vector2 grid, float level)
+        /// <summary>A box collider on `owner` around everything the model draws, so the building can be clicked.</summary>
+        public static void AddPickCollider(GameObject owner, GameObject model)
         {
-            var p = map.GridToWorld(grid, level);
-            var q = ToWorld;
-            float s = ModelArt.WorldPerModelUnit;
-            float height = level * IsoGrid.StepHeight / (s * (q * Vector3.up).y); // in model units
-            p.z = DepthBase + s * (q * new Vector3(grid.x, height, grid.y)).z;
-            return p;
-        }
-
-        /// <summary>A copy of the material drawn in the transparent queue (keeping its own depth writing).</summary>
-        static Material Sorted(Material src)
-        {
-            if (src.renderQueue >= (int)RenderQueue.Transparent) return src;
-            if (!sorted.TryGetValue(src, out var m))
-                sorted[src] = m = new Material(src) { name = src.name + " (sorted)", renderQueue = (int)RenderQueue.Transparent };
-            return m;
-        }
-
-        /// <summary>
-        /// Call once every sprite has been baked (after GameArt.EnsureRendered): turns the scene's directional lights
-        /// along with the models and adds ModelArt's key light, turned the same way. Once per scene.
-        /// </summary>
-        public static void MatchBakeLighting()
-        {
-            if (keyLight != null) return;
-            var q = ToWorld;
-            foreach (var l in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
-                if (l.type == LightType.Directional) l.transform.rotation = q * l.transform.rotation;
-
-            keyLight = new GameObject("ModelKeyLight").AddComponent<Light>();
-            keyLight.type = LightType.Directional;
-            keyLight.transform.rotation = q * ModelArt.KeyLightRotation;
-            keyLight.intensity = ModelArt.KeyLightIntensity;
-            keyLight.color = ModelArt.KeyLightColor;
-            keyLight.shadows = LightShadows.None;
+            var t = owner.transform;
+            var bounds = new Bounds();
+            bool any = false;
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                if (r is ParticleSystemRenderer) continue;
+                var b = r.bounds;
+                for (int i = 0; i < 8; i++)
+                {
+                    var corner = t.InverseTransformPoint(b.center + Vector3.Scale(b.extents, new Vector3(i & 1, (i >> 1) & 1, (i >> 2) & 1) * 2f - Vector3.one));
+                    if (!any) { bounds = new Bounds(corner, Vector3.zero); any = true; }
+                    else bounds.Encapsulate(corner);
+                }
+            }
+            if (!any) return;
+            var box = owner.GetComponent<BoxCollider>();
+            if (box == null) box = owner.AddComponent<BoxCollider>();
+            box.center = bounds.center;
+            box.size = Vector3.Max(bounds.size, Vector3.one * 0.3f);
         }
 
         public static Transform FindChild(Transform t, string name)

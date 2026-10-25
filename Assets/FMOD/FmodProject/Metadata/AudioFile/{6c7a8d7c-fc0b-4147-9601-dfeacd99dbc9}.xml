@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.03.00">
+	<object class="AudioFile" id="{6c7a8d7c-fc0b-4147-9601-dfeacd99dbc9}">
+		<property name="assetPath">
+			<value>DCFOLYProp_Coins Drop to Concrete 02_PSE_FESS_0At2j.wav</value>
+		</property>
+		<property name="frequencyInKHz">
+			<value>48</value>
+		</property>
+		<property name="channelCount">
+			<value>2</value>
+		</property>
+		<property name="length">
+			<value>9.674666666666667</value>
+		</property>
+		<relationship name="masterAssetFolder">
+			<destination>{179e0851-96ef-43a9-bda8-0c183feb11e3}</destination>
+		</relationship>
+	</object>
+</objects>

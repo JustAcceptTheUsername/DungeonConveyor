@@ -5,9 +5,10 @@ using UnityEngine.InputSystem;
 namespace DungeonConveyor
 {
     /// <summary>
-    /// Buying, placing and deleting buildings.
-    /// - Pick a building in the build menu; a ghost follows the cursor showing its footprint in green (ok) or red
-    ///   (blocked); left-click buys it.
+    /// Buying, placing and deleting buildings on the planet.
+    /// - Pick a building in the build menu; a see-through copy follows the cursor with its footprint marked in green
+    ///   (ok) or red (blocked); left-click buys it. Footprints are 1, 3 or 7 hexes anchored on the cell under
+    ///   the cursor (see IsoGrid.Footprint); the 12 pentagon spires can't be built on.
     /// - Conveyors are drawn instead: press on a tile and drag, and the belt follows the cursor, curving at turns.
     ///   Releasing builds every tile up to the first blocked or unaffordable one. Belt ends hook onto loose ends
     ///   of existing belts, take output from an adjacent miner and feed an adjacent Core.
@@ -30,6 +31,8 @@ namespace DungeonConveyor
         public CoreBuilding Core { get; private set; }
         /// <summary>Footprint origin of the placement ghost this frame, if one is shown.</summary>
         public Vector2Int? GhostOrigin { get; private set; }
+        /// <summary>Level the placement ghost stands on this frame.</summary>
+        public int GhostLevel { get; private set; }
         public IReadOnlyList<Conveyor> Conveyors => conveyors;
         public IReadOnlyList<Miner> Miners => miners;
         public IReadOnlyList<Building> Buildings => buildings;
@@ -38,18 +41,21 @@ namespace DungeonConveyor
         public BuildingCatalog.Entry Placing { get; private set; }
         /// <summary>Why the current ghost position can't be built on (null when it can).</summary>
         public string BlockedReason { get; private set; }
-        /// <summary>While drawing belts or walls the left button belongs to us, not to camera panning.</summary>
+        /// <summary>While drawing belts or walls the left button belongs to us, not to turning the camera.</summary>
         public bool CapturesLeftDrag => Placing != null && IsLine(Placing);
 
         static readonly Color GhostOk = new Color(0.6f, 1f, 0.6f, 0.75f), GhostBad = new Color(1f, 0.4f, 0.35f, 0.65f);
+        static readonly Color ModelOk = new Color(0.55f, 1f, 0.6f, 0.5f), ModelBad = new Color(1f, 0.4f, 0.35f, 0.5f);
         static readonly Color MarkOk = new Color(0.4f, 1f, 0.4f, 0.9f), MarkBad = new Color(1f, 0.3f, 0.25f, 0.9f);
 
         IsoGrid map;
+        MapView view;
         Camera cam;
         CameraController camController;
         Material spriteMaterial;
-        Transform buildingsRoot;
-        SpriteRenderer ghost;
+        Transform buildingsRoot, ghostRoot;
+        readonly Dictionary<BuildingCatalog.Entry, GameObject> ghostModels = new Dictionary<BuildingCatalog.Entry, GameObject>();
+        GameObject shownGhost;
         readonly List<SpriteRenderer> marks = new List<SpriteRenderer>();
         readonly List<SpriteRenderer> beltGhosts = new List<SpriteRenderer>();
         readonly List<Building> buildings = new List<Building>();
@@ -59,9 +65,11 @@ namespace DungeonConveyor
         WorldDecor decor;
         FlowField pathCheck;
         bool drawingBelt;
-        int beltFrame;
+        int beltFrame, usedMarks;
 
         public bool CanAfford(BuildingCatalog.Entry e) => Gold >= e.Cost;
+        /// <summary>Gold earned this map (bounties, crystals, bonuses), for the map summary.</summary>
+        public int GoldEarned { get; private set; }
 
         /// <summary>Raised whenever Gold changes: the delta (+ earned, - spent) and the world position it came from, if any.</summary>
         public event System.Action<int, Vector3?> GoldChanged;
@@ -73,11 +81,9 @@ namespace DungeonConveyor
         {
             if (delta == 0) return;
             Gold += delta;
+            if (delta > 0) GoldEarned += delta;
             GoldChanged?.Invoke(delta, from);
         }
-
-        /// <summary>Placed buildings show their 3D model rather than a sprite (BuildingCatalog.LiveModels).</summary>
-        bool LiveModels => Catalog != null && Catalog.LiveModels;
 
         static bool IsConveyor(BuildingCatalog.Entry e) => e.Id == BuildingCatalog.ConveyorId;
         static bool IsWall(BuildingCatalog.Entry e) => e.Id == BuildingCatalog.WallId;
@@ -87,40 +93,55 @@ namespace DungeonConveyor
         void Start()
         {
             map = GetComponent<IsoGrid>();
+            view = GetComponent<MapView>();
             cam = Camera.main;
             if (cam != null) camController = cam.GetComponent<CameraController>();
-            var view = GetComponent<MapView>();
             if (view != null) spriteMaterial = view.SpriteMaterial;
-            Gold = StartingGold + Run.CarriedGold; // later maps start with the gold left over from the last one
+            Gold = StartingGold + Run.CarriedGold + (Run.Stage == 0 ? Meta.StartingGoldBonus : 0); // later maps start with the gold left over from the last one
 
             Catalog = BuildingCatalog.Instance;
             if (Catalog == null)
                 Debug.LogWarning("BuildController: Resources/BuildingCatalog.asset not found (Dungeon > Sync Building Catalog).");
             GameArt.EnsureRendered(transform);
-            if (LiveModels) BuildingModels.MatchBakeLighting();
             decor = GetComponent<WorldDecor>();
             pathCheck = new FlowField(map);
 
             buildingsRoot = new GameObject("Buildings").transform;
             buildingsRoot.SetParent(transform, false);
-            ghost = NewSprite("Ghost", transform);
-            ghost.sortingOrder = short.MaxValue - 1;
-            ghost.enabled = false;
+            ghostRoot = new GameObject("Ghosts").transform;
+            ghostRoot.SetParent(transform, false);
 
             // The Core stands on the yellow base from the start.
             var core = Catalog != null ? Catalog.Find(BuildingCatalog.CoreId) : null;
             if (core != null) Core = (CoreBuilding)Place(core, map.BaseOrigin, map.Heights[map.BaseOrigin.x, map.BaseOrigin.y], free: true);
+            if (Core != null)
+            {
+                Core.MaxHealth = Core.Health = 1000f * Meta.CoreHealthMultiplier * Run.CoreHealthMultiplier;
+                Run.Applied += OnCardApplied;
+            }
+        }
+
+        void OnDestroy() => Run.Applied -= OnCardApplied;
+
+        /// <summary>Iron Heart: the Core grows and heals to full on the spot.</summary>
+        void OnCardApplied(Run.Card c)
+        {
+            if (Core == null || c.Kind != Run.CardKind.Relic || c.RelicKind != Run.Relic.IronHeart) return;
+            Core.MaxHealth = 1000f * Meta.CoreHealthMultiplier * Run.CoreHealthMultiplier;
+            Core.Health = Core.MaxHealth;
         }
 
         public void Select(BuildingCatalog.Entry entry)
         {
             if (entry != null && !Run.IsUnlocked(entry.Id)) return; // still locked in the shop
             Placing = entry == Placing ? null : entry;
+            Sfx.Play(Placing != null ? Sfx.Lib.Select : Sfx.Lib.Cancel);
             drawingBelt = false;
         }
 
         public void Cancel()
         {
+            if (Placing != null) Sfx.Play(Sfx.Lib.Cancel);
             Placing = null;
             drawingBelt = false;
         }
@@ -137,16 +158,15 @@ namespace DungeonConveyor
             if (mouse == null || cam == null) return;
             Vector2 screen = mouse.position.ReadValue();
             bool overUI = HUD.IsPointerOverUI(screen);
-            var world = cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
 
             var keyboard = Keyboard.current;
             if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) Cancel();
-            UpdateErase(mouse, overUI, world);
+            UpdateErase(mouse, overUI, screen);
             if (Placing == null) return;
 
-            bool panning = camController != null && camController.IsDragging;
+            bool turning = camController != null && camController.IsDragging;
             Vector2Int cell = default;
-            bool hit = !overUI && !panning && map.Pick(world, out cell);
+            bool hit = !overUI && !turning && map.Pick(cam, screen, out cell);
 
             if (IsLine(Placing)) UpdateLine(mouse, hit, cell);
             else UpdateFootprint(mouse, hit, cell);
@@ -162,7 +182,7 @@ namespace DungeonConveyor
         /// moving sweeps away every belt and wall tile the cursor passes over, including tiles skipped between frames.
         /// Releasing without having removed anything cancels placing.
         /// </summary>
-        void UpdateErase(Mouse mouse, bool overUI, Vector3 world)
+        void UpdateErase(Mouse mouse, bool overUI, Vector2 screen)
         {
             if (mouse.rightButton.wasPressedThisFrame && !overUI)
             {
@@ -170,7 +190,7 @@ namespace DungeonConveyor
                 erasedAny = false;
                 lastEraseCell = null;
                 drawingBelt = false;
-                var target = PickBuilding(world);
+                var target = PickBuilding(screen);
                 if (target != null && target.Def.Purchasable && !IsSweepable(target))
                 {
                     RemoveBuilding(target, refund: true);
@@ -181,13 +201,13 @@ namespace DungeonConveyor
 
             if (mouse.rightButton.isPressed)
             {
-                var target = PickBuilding(world);
-                Vector2Int? cell = target != null ? target.Origin : map.Pick(world, out var c) ? c : (Vector2Int?)null;
+                var target = PickBuilding(screen);
+                Vector2Int? cell = target != null ? target.Origin : map.Pick(cam, screen, out var c) ? c : (Vector2Int?)null;
                 if (cell.HasValue)
                 {
                     // Walk from the last cell so a quick swipe doesn't leave gaps.
-                    var from = lastEraseCell ?? cell.Value;
-                    for (var p = from; ; )
+                    var p = lastEraseCell ?? cell.Value;
+                    for (int guard = 0; guard < 200; guard++)
                     {
                         if (map.BuildingAt(p) is Building b && IsSweepable(b))
                         {
@@ -195,8 +215,7 @@ namespace DungeonConveyor
                             erasedAny = true;
                         }
                         if (p == cell.Value) break;
-                        var d = cell.Value - p;
-                        p += Mathf.Abs(d.x) >= Mathf.Abs(d.y) ? new Vector2Int((int)Mathf.Sign(d.x), 0) : new Vector2Int(0, (int)Mathf.Sign(d.y));
+                        p = StepToward(p, cell.Value);
                     }
                     lastEraseCell = cell;
                 }
@@ -209,29 +228,50 @@ namespace DungeonConveyor
 
         static bool IsSweepable(Building b) => b is Conveyor || b is Wall;
 
+        /// <summary>The neighbour of `from` closest to `to` over the planet.</summary>
+        Vector2Int StepToward(Vector2Int from, Vector2Int to)
+        {
+            var target = map.Up(to);
+            var best = from;
+            float bestAngle = float.MaxValue;
+            for (int d = 0; d < map.Sides(from); d++)
+            {
+                var n = map.Neighbour(from, d);
+                float a = Vector3.Angle(map.Up(n), target);
+                if (a < bestAngle) { bestAngle = a; best = n; }
+            }
+            return best;
+        }
+
         // ---------------------------------------------------------------- regular buildings
 
         void UpdateFootprint(Mouse mouse, bool hit, Vector2Int cell)
         {
             if (!hit) return;
-            // Centre the footprint on the cursor.
-            var origin = cell - (Placing.Size - Vector2Int.one) / 2;
+            var origin = cell; // the footprint is anchored on the cell under the cursor
             bool ok = CanPlace(Placing, origin, out int level, out string reason);
             if (ok && !CanAfford(Placing)) { ok = false; reason = "Not enough gold"; }
             BlockedReason = reason;
             GhostOrigin = origin;
+            GhostLevel = level;
             ShowGhost(Placing, origin, level, ok);
 
             // Released (not pressed) so a camera drag that starts here doesn't also build.
-            if (ok && mouse.leftButton.wasReleasedThisFrame) Place(Placing, origin, level);
+            if (ok && mouse.leftButton.wasReleasedThisFrame)
+            {
+                Place(Placing, origin, level);
+                Sfx.Play(Sfx.Lib.Place, map.FootprintCenter(origin, Placing.Size, level));
+            }
+            else if (!ok && mouse.leftButton.wasReleasedThisFrame) Sfx.Play(Sfx.Lib.CantPlace);
         }
 
         public bool CanPlace(BuildingCatalog.Entry e, Vector2Int origin, out int level, out string reason)
         {
+            level = 0;
+            if (!map.FootprintFits(origin, e.Size)) { reason = "Doesn't fit here"; return false; }
             int lo = int.MaxValue, hi = int.MinValue;
             bool ore = false;
-            level = 0;
-            foreach (var c in Footprint(origin, e.Size))
+            foreach (var c in map.Footprint(origin, e.Size))
             {
                 if (!CellFree(c, out reason)) return false;
                 ore |= map.IsOre(c);
@@ -244,16 +284,14 @@ namespace DungeonConveyor
             if (hi - lo > MaxFootprintSlope) { reason = "Ground too uneven"; return false; }
             if (e.BlocksEnemies)
             {
+                var cells = map.Footprint(origin, e.Size);
                 foreach (var enemy in Enemy.All)
-                    if (IsInside(enemy.Cell, origin, e.Size)) { reason = "An enemy is in the way"; return false; }
-                if (pathCheck != null && pathCheck.WouldBlock(Footprint(origin, e.Size))) { reason = "Would block the enemies' path"; return false; }
+                    if (enemy.Landed && cells.Contains(enemy.Cell)) { reason = "An enemy is in the way"; return false; }
+                if (pathCheck != null && pathCheck.WouldBlock(cells)) { reason = "Would block the enemies' path"; return false; }
             }
             reason = null;
             return true;
         }
-
-        static bool IsInside(Vector2Int c, Vector2Int origin, Vector2Int size) =>
-            c.x >= origin.x && c.y >= origin.y && c.x < origin.x + size.x && c.y < origin.y + size.y;
 
         /// <summary>Buys and places a building if allowed (used by scripts such as the playtest bot).</summary>
         public Building TryPlace(BuildingCatalog.Entry e, Vector2Int origin)
@@ -262,7 +300,7 @@ namespace DungeonConveyor
             return Place(e, origin, level);
         }
 
-        /// <summary>Buys and lays a belt along a path, as if drawn by hand; returns how many tiles were built.</summary>
+        /// <summary>Buys and lays a belt along a path of neighbouring cells, as if drawn by hand; returns how many tiles were built.</summary>
         public int TryPlaceBelt(IList<Vector2Int> path)
         {
             var belt = Catalog != null ? Catalog.Find(BuildingCatalog.ConveyorId) : null;
@@ -281,6 +319,7 @@ namespace DungeonConveyor
         bool CellFree(Vector2Int c, out string reason)
         {
             reason = !map.HasCell(c) ? "Off the map"
+                : map.IsPentagon(c) ? "Rock spire"
                 : map.IsBase(c) || map.IsSpawn(c) ? "Reserved"
                 : map.BuildingAt(c) != null ? "Occupied"
                 : null;
@@ -290,11 +329,9 @@ namespace DungeonConveyor
         Building Place(BuildingCatalog.Entry e, Vector2Int origin, int level, bool free = false)
         {
             if (!free) ChangeGold(-e.Cost);
-            var sr = NewSprite(e.Name, buildingsRoot);
-            sr.sprite = e.Sprite;
-            sr.transform.position = FootprintCenter(origin, e.Size, level);
-            sr.sortingOrder = map.SortOrder(origin) + 1; // origin is the front-most cell of the footprint
-            var go = sr.gameObject;
+            var go = new GameObject(e.Name);
+            go.transform.SetParent(buildingsRoot, false);
+            go.transform.SetPositionAndRotation(map.FootprintCenter(origin, e.Size, level), map.FootprintFrame(origin, e.Size));
             Building building =
                 e.Id == BuildingCatalog.CoreId ? go.AddComponent<CoreBuilding>() :
                 e.NeedsOre ? go.AddComponent<Miner>() :
@@ -303,26 +340,25 @@ namespace DungeonConveyor
                 e.Attack != AttackKind.None ? go.AddComponent<Tower>() :
                 e.Id == BuildingCatalog.WallId ? go.AddComponent<Wall>() :
                 go.AddComponent<Building>();
-            building.Init(e, origin, level, sr);
-            if (LiveModels && !(building is Wall)) building.ShowModel(map);
-            if (building is Tower tower) tower.SetupHead(Catalog.AimingHeads);
+            building.Init(e, origin, level, null);
             if (building is Wall)
             {
-                sr.sprite = null; // drawn by its snapped pieces instead
-                Register(building, e.Size);
-                RefreshWalls(origin, e.Size);
+                Register(building);
+                RefreshWalls(building.Cells);
                 return building;
             }
+            building.ShowModel(map);
+            if (building is Tower tower) tower.SetupHead(Catalog.AimingHeads);
             if (building is Miner miner)
             {
-                foreach (var c in Footprint(origin, e.Size))
+                foreach (var c in building.Cells)
                 {
-                    var patch = map.InBounds(c) ? map.PatchAt[c.x, c.y] : null;
+                    var patch = map.PatchAt[c.x, c.y];
                     if (patch != null && !miner.Patches.Contains(patch)) miner.Patches.Add(patch);
                 }
                 miners.Add(miner);
             }
-            Register(building, e.Size);
+            Register(building);
             return building;
         }
 
@@ -353,6 +389,8 @@ namespace DungeonConveyor
             {
                 drawingBelt = false;
                 if (walls) PlaceWalls(buildable); else PlaceBelt(buildable);
+                if (buildable > 0) Sfx.Play(walls ? Sfx.Lib.Place : Sfx.Lib.PlaceBelt, map.SurfaceCenter(beltPath[0]));
+                else Sfx.Play(Sfx.Lib.CantPlace);
             }
         }
 
@@ -375,7 +413,7 @@ namespace DungeonConveyor
                 if (!CellFree(c, out reason)) return i;
                 if (map.IsOre(c)) { reason = "Ore is reserved for mining"; return i; }
                 foreach (var enemy in Enemy.All)
-                    if (enemy.Cell == c) { reason = "An enemy is in the way"; return i; }
+                    if (enemy.Landed && enemy.Cell == c) { reason = "An enemy is in the way"; return i; }
                 if (gold < Placing.Cost) { reason = "Not enough gold"; return i; }
                 newCells.Add(c);
                 if (pathCheck != null && pathCheck.WouldBlock(newCells))
@@ -390,25 +428,18 @@ namespace DungeonConveyor
         }
 
         readonly List<Vector2Int> wallScratch = new List<Vector2Int>();
-        readonly List<SpriteRenderer> wallGhosts = new List<SpriteRenderer>();
 
-        /// <summary>Shows the wall line already snapped together: green where it will be built, red after that.</summary>
+        /// <summary>Marks the wall line's tiles: green where it will be built, red after that.</summary>
         int PreviewWalls()
         {
             int buildable = CountWalls(out string reason, wallScratch);
             BlockedReason = reason;
-            var line = new HashSet<Vector2Int>(beltPath);
-            bool IsWallOrPlanned(Vector2Int c) => line.Contains(c) || map.BuildingAt(c) is Wall;
-            int used = 0;
             for (int i = 0; i < beltPath.Count; i++)
             {
                 var c = beltPath[i];
                 if (map.BuildingAt(c) is Wall) continue;
-                int level = map.HasCell(c) ? map.Heights[c.x, c.y] : 0;
-                used = Wall.Build(map, c, level, IsWallOrPlanned, spriteMaterial, transform, wallGhosts, used,
-                    short.MaxValue - 3, i < buildable ? GhostOk : GhostBad);
+                Mark(c, map.Heights[c.x, c.y], i < buildable);
             }
-            for (int i = used; i < wallGhosts.Count; i++) wallGhosts[i].enabled = false;
             return buildable;
         }
 
@@ -423,13 +454,17 @@ namespace DungeonConveyor
             }
         }
 
-        /// <summary>Re-snaps the walls on and around these cells to their neighbours.</summary>
-        void RefreshWalls(Vector2Int origin, Vector2Int size)
+        /// <summary>Re-snaps the walls on and around a footprint to their neighbours.</summary>
+        void RefreshWalls(List<Vector2Int> footprint)
         {
-            for (int x = -1; x <= size.x; x++)
-                for (int y = -1; y <= size.y; y++)
-                    if (map.BuildingAt(origin + new Vector2Int(x, y)) is Wall w)
-                        w.Shape(map, c => map.BuildingAt(c) is Wall, spriteMaterial, LiveModels);
+            var cells = new HashSet<Vector2Int>();
+            foreach (var c in footprint)
+            {
+                cells.Add(c);
+                for (int d = 0; d < map.Sides(c); d++) cells.Add(map.Neighbour(c, d));
+            }
+            foreach (var c in cells)
+                if (map.BuildingAt(c) is Wall w) w.Shape(map, n => map.BuildingAt(n) is Wall);
         }
 
         /// <summary>Builds a wall line along a path, as if drawn by hand (for scripts); returns walls built.</summary>
@@ -451,7 +486,7 @@ namespace DungeonConveyor
 
         // ---------------------------------------------------------------- conveyors
 
-        /// <summary>Follow the cursor: walk to it one axis at a time, backtracking if it returns over the belt.</summary>
+        /// <summary>Follow the cursor: walk to it one cell at a time, backtracking if it returns over the belt.</summary>
         void ExtendBelt(Vector2Int target)
         {
             int guard = 0;
@@ -463,10 +498,7 @@ namespace DungeonConveyor
                     beltPath.RemoveRange(existing + 1, beltPath.Count - existing - 1);
                     return;
                 }
-                var last = beltPath[beltPath.Count - 1];
-                var d = target - last;
-                var step = Mathf.Abs(d.x) >= Mathf.Abs(d.y) ? new Vector2Int((int)Mathf.Sign(d.x), 0) : new Vector2Int(0, (int)Mathf.Sign(d.y));
-                var next = last + step;
+                var next = StepToward(beltPath[beltPath.Count - 1], target);
                 int loop = beltPath.IndexOf(next);
                 if (loop >= 0) beltPath.RemoveRange(loop + 1, beltPath.Count - loop - 1);
                 else beltPath.Add(next);
@@ -490,9 +522,9 @@ namespace DungeonConveyor
                 var to = i == last ? endInto : i < n - 1 ? beltPath[i + 1] : (Vector2Int?)null;
                 var g = BeltGhost(i);
                 g.enabled = true;
-                g.sprite = ConveyorArt.Get(ins[i], outs[i], LiftTo(c, from), LiftTo(c, to), beltFrame);
+                g.sprite = ConveyorArt.Get(ins[i], outs[i], 0, 0, beltFrame);
                 g.color = i < buildable ? GhostOk : GhostBad;
-                g.transform.position = BeltPosition(c);
+                LayBelt(g.transform, c, HeightAt(c), ins[i], outs[i], LiftTo(c, from), LiftTo(c, to), 0.01f);
             }
             return buildable;
         }
@@ -509,6 +541,7 @@ namespace DungeonConveyor
                 if (i > 0)
                 {
                     var p = beltPath[i - 1];
+                    if (map.DirTo(p, c) < 0) { reason = "Belt tiles must touch"; return i; }
                     if (Mathf.Abs(map.Heights[c.x, c.y] - map.Heights[p.x, p.y]) > MaxFootprintSlope) { reason = "Too steep for a belt"; return i; }
                 }
                 if (gold < Placing.Cost) { reason = "Not enough gold"; return i; }
@@ -535,8 +568,11 @@ namespace DungeonConveyor
             outs = new int[n];
             for (int i = 0; i < n; i++)
             {
-                ins[i] = i > 0 ? Dir.Of(beltPath[i - 1] - beltPath[i]) : (n > 1 ? Dir.Of(beltPath[0] - beltPath[1]) : 1);
-                outs[i] = i < n - 1 ? Dir.Of(beltPath[i + 1] - beltPath[i]) : Dir.Opposite(ins[i]);
+                ins[i] = Side(beltPath[i], i > 0 ? beltPath[i - 1] : (Vector2Int?)null);
+                outs[i] = Side(beltPath[i], i < n - 1 ? beltPath[i + 1] : (Vector2Int?)null);
+                if (ins[i] < 0 && outs[i] < 0) { ins[i] = Dir.Opposite(0); outs[i] = 0; }
+                else if (ins[i] < 0) ins[i] = Dir.Opposite(outs[i]);
+                else if (outs[i] < 0) outs[i] = Dir.Opposite(ins[i]);
             }
             count = Mathf.Clamp(count, 1, n);
 
@@ -546,24 +582,24 @@ namespace DungeonConveyor
             receiver = null;
             endInto = null;
             // None of these can sit on the path itself, so their sides never clash with the path's own neighbours.
-            int start = feeder != null ? Dir.Of(feeder.Cell - first) : SideToward(first, b => b is Miner || b is Splitter || b is Refiner);
+            int start = feeder != null ? map.DirTo(first, feeder.Cell) : SideToward(first, b => b is Miner || b is Splitter || b is Refiner);
             int end = -1;
             if (count < n)
             {
                 var next = beltPath[count];
-                if (AcceptsFrom(map.BuildingAt(next), last)) { end = Dir.Of(next - last); endInto = next; }
+                if (AcceptsFrom(map.BuildingAt(next), last)) { end = map.DirTo(last, next); endInto = next; }
             }
             else
             {
                 receiver = FindReceiver(last, feeder);
-                if (receiver != null) { end = Dir.Of(receiver.Cell - last); endInto = receiver.Cell; }
-                else end = SideToward(last, b => b.IsCore || b is Splitter || b is Refiner);
+                if (receiver != null) { end = map.DirTo(last, receiver.Cell); endInto = receiver.Cell; }
+                else end = SideToward(last, b => b.IsCore || b is Splitter || b is Refiner || b is Tower t && t.TakesCrystals);
                 if (end < 0 && count > 1)
                 {
-                    var ahead = last + Dir.Offsets[Dir.Opposite(ins[count - 1])];
+                    var ahead = map.Neighbour(last, Dir.Opposite(ins[count - 1]));
                     if (map.BuildingAt(ahead) is Conveyor side && !beltPath.Contains(ahead) && AcceptsFrom(side, last))
                     {
-                        end = Dir.Of(ahead - last);
+                        end = map.DirTo(last, ahead);
                         endInto = ahead;
                     }
                 }
@@ -572,7 +608,7 @@ namespace DungeonConveyor
 
             if (count == 1)
             {
-                if (start < 0 && end < 0) { start = n > 1 ? ins[0] : 1; end = Dir.Opposite(start); } // lone tile flows toward +x
+                if (start < 0 && end < 0) { start = ins[0]; end = Dir.Opposite(start); } // lone tile flows toward side 0
                 else if (start < 0) start = Dir.Opposite(end);
                 else if (end < 0) end = Dir.Opposite(start);
             }
@@ -585,19 +621,22 @@ namespace DungeonConveyor
             outs[count - 1] = end;
         }
 
+        /// <summary>Side of `cell` toward a neighbouring cell, or -1 if there is none (or it doesn't touch).</summary>
+        int Side(Vector2Int cell, Vector2Int? other) => other.HasValue ? map.DirTo(cell, other.Value) : -1;
+
         /// <summary>Can a belt on `from` hand items to this building? Belts take them from any side but their output.</summary>
         bool AcceptsFrom(Building b, Vector2Int from)
         {
             if (b is Conveyor c) return c.OutCell != from && !TooSteep(c, from);
-            return b != null && (b.IsCore || b is Splitter || b is Refiner);
+            return b != null && (b.IsCore || b is Splitter || b is Refiner || b is Tower t && t.TakesCrystals);
         }
 
         /// <summary>The side of this cell touching a matching building, or -1.</summary>
         int SideToward(Vector2Int cell, System.Predicate<Building> match)
         {
-            for (int d = 0; d < 4; d++)
+            for (int d = 0; d < map.Sides(cell); d++)
             {
-                var b = map.BuildingAt(cell + Dir.Offsets[d]);
+                var b = map.BuildingAt(map.Neighbour(cell, d));
                 if (b != null && !(b is Conveyor) && match(b)) return d;
             }
             return -1;
@@ -606,9 +645,9 @@ namespace DungeonConveyor
         Conveyor FindFeeder(Vector2Int cell)
         {
             Conveyor loose = null;
-            for (int d = 0; d < 4; d++)
+            for (int d = 0; d < map.Sides(cell); d++)
             {
-                if (!(map.BuildingAt(cell + Dir.Offsets[d]) is Conveyor c) || beltPath.Contains(c.Cell) || TooSteep(c, cell)) continue;
+                if (!(map.BuildingAt(map.Neighbour(cell, d)) is Conveyor c) || beltPath.Contains(c.Cell) || TooSteep(c, cell)) continue;
                 if (c.OutCell == cell) return c;
                 if (loose == null && map.BuildingAt(c.OutCell) == null && c.InCell != cell) loose = c;
             }
@@ -618,9 +657,9 @@ namespace DungeonConveyor
         Conveyor FindReceiver(Vector2Int cell, Conveyor exclude)
         {
             Conveyor loose = null;
-            for (int d = 0; d < 4; d++)
+            for (int d = 0; d < map.Sides(cell); d++)
             {
-                if (!(map.BuildingAt(cell + Dir.Offsets[d]) is Conveyor c) || c == exclude || beltPath.Contains(c.Cell) || TooSteep(c, cell)) continue;
+                if (!(map.BuildingAt(map.Neighbour(cell, d)) is Conveyor c) || c == exclude || beltPath.Contains(c.Cell) || TooSteep(c, cell)) continue;
                 if (c.InCell == cell) return c;
                 if (loose == null && map.BuildingAt(c.InCell) == null && c.OutCell != cell) loose = c;
             }
@@ -638,19 +677,17 @@ namespace DungeonConveyor
             {
                 var c = beltPath[i];
                 var sr = NewSprite("Conveyor", buildingsRoot);
-                sr.transform.position = BeltPosition(c);
-                sr.sortingOrder = map.SortOrder(c) + 1;
                 var belt = sr.gameObject.AddComponent<Conveyor>();
                 belt.Init(Placing, c, map.Heights[c.x, c.y], sr);
                 belt.In = ins[i];
                 belt.Out = outs[i];
-                Register(belt, Vector2Int.one);
+                Register(belt);
                 conveyors.Add(belt);
                 placed.Add(belt);
             }
 
-            if (feeder != null) feeder.Out = Dir.Of(beltPath[0] - feeder.Cell);
-            if (receiver != null) receiver.In = Dir.Of(beltPath[count - 1] - receiver.Cell);
+            if (feeder != null) feeder.Out = map.DirTo(feeder.Cell, beltPath[0]);
+            if (receiver != null) receiver.In = map.DirTo(receiver.Cell, beltPath[count - 1]);
             // Sides are final now; ramps depend on which neighbours actually connect.
             foreach (var belt in placed) RefreshBelt(belt);
             if (feeder != null) RefreshBelt(feeder);
@@ -665,6 +702,24 @@ namespace DungeonConveyor
             // Head-on or into its side, a belt ramps up to a higher belt it feeds.
             int outLift = map.BuildingAt(c.OutCell) is Conveyor to && to.OutCell != c.Cell ? LiftTo(c.Cell, to.Cell) : 0;
             c.SetShape(c.In, c.Out, inLift, outLift, beltFrame);
+            LayBelt(c.transform, c.Cell, c.Level, c.In, c.Out, inLift, outLift);
+        }
+
+        /// <summary>
+        /// Lays a belt sprite flat on its cell; a belt with a raised end is lifted and tilted into a ramp from its
+        /// input side to its output side.
+        /// </summary>
+        void LayBelt(Transform t, Vector2Int cell, int level, int inSide, int outSide, int inLift, int outLift, float extraLift = 0f)
+        {
+            PlanetArt.LayFlat(t, map, cell, level, ConveyorArt.SurfaceHeight + extraLift);
+            if (inLift == 0 && outLift == 0) return;
+            var up = map.Up(cell);
+            var flow = Vector3.ProjectOnPlane(
+                map.CellDir(cell, Dir.Mid(outSide)) - map.CellDir(cell, Dir.Mid(inSide)), up).normalized;
+            float slope = (outLift - inLift) * IsoGrid.StepHeight;
+            var tilted = (up - flow * slope).normalized;
+            t.SetPositionAndRotation(t.position + up * ((inLift + outLift) * 0.5f * IsoGrid.StepHeight),
+                Quaternion.FromToRotation(up, tilted) * t.rotation);
         }
 
         /// <summary>1 when the neighbour stands one level higher (this tile ramps up to it), otherwise 0.</summary>
@@ -674,8 +729,6 @@ namespace DungeonConveyor
         bool TooSteep(Conveyor c, Vector2Int cell) => Mathf.Abs(c.Level - HeightAt(cell)) > MaxFootprintSlope;
 
         int HeightAt(Vector2Int c) => map.InBounds(c) ? map.Heights[c.x, c.y] : 0;
-
-        Vector3 BeltPosition(Vector2Int c) => map.HasCell(c) ? map.SurfaceCenter(c) : map.CellCenter(c);
 
         void AnimateBelts()
         {
@@ -687,57 +740,54 @@ namespace DungeonConveyor
 
         // ---------------------------------------------------------------- deleting
 
-        /// <summary>
-        /// The building drawn at this point: tall sprites are hit-tested per pixel (front-most wins, unless terrain in
-        /// front hides them); otherwise whatever stands on the tile under the cursor.
-        /// </summary>
-        Building PickBuilding(Vector3 world)
+        /// <summary>The building under a screen point: a model the ray hits first, or whatever stands on the ground it hits.</summary>
+        Building PickBuilding(Vector2 screen)
         {
-            bool terrain = map.Pick(world, out var cell);
-            int occluder = terrain ? map.SortOrder(cell) : int.MinValue;
-            Building best = null;
-            int bestOrder = occluder;
-            foreach (var b in buildings)
+            var ray = cam.ScreenPointToRay(screen);
+            var hits = Physics.RaycastAll(ray, 10000f);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (var hit in hits)
             {
-                var sr = b.Renderer;
-                if (sr.sortingOrder <= bestOrder || !sr.bounds.Contains(new Vector3(world.x, world.y, sr.bounds.center.z))) continue;
-                if (SpriteHit.OpaqueAt(sr, world))
-                {
-                    best = b;
-                    bestOrder = sr.sortingOrder;
-                }
+                if (view != null && view.IsGround(hit.collider)) break;
+                var b = hit.collider.GetComponentInParent<Building>();
+                if (b != null && buildings.Contains(b)) return b;
             }
-            return best != null ? best : terrain ? map.BuildingAt(cell) : null;
+            return map.Pick(cam, screen, out var cell) ? map.BuildingAt(cell) : null;
         }
 
         /// <summary>Removes a building (refunding it if asked); anything it carries or holds goes with it.</summary>
         public void RemoveBuilding(Building b, bool refund)
         {
             if (b == null || b.IsCore) return;
-            foreach (var c in Footprint(b.Origin, b.Size))
+            foreach (var c in b.Cells)
             {
                 if (map.BuildingAt(c) == b) map.Buildings[c.x, c.y] = null;
                 if (decor != null && map.IsOre(c)) decor.SetDepositVisible(c, true);
             }
             buildings.Remove(b);
             if (b is Miner miner) miners.Remove(miner);
-            if (refund) ChangeGold(Mathf.RoundToInt(b.Def.Cost * RefundFraction));
+            if (refund)
+            {
+                ChangeGold(Mathf.RoundToInt(b.Def.Cost * RefundFraction));
+                Sfx.Play(Sfx.Lib.Demolish, b.Center);
+            }
+            Sfx.StopLoop(b);
             Destroy(b.gameObject); // takes any crystals riding a belt or held inside with it
             if (b is Conveyor belt)
             {
                 conveyors.Remove(belt);
                 // Neighbours that ramped up to it flatten out again.
-                foreach (var d in Dir.Offsets)
-                    if (map.BuildingAt(belt.Cell + d) is Conveyor n) RefreshBelt(n);
+                for (int d = 0; d < map.Sides(belt.Cell); d++)
+                    if (map.BuildingAt(map.Neighbour(belt.Cell, d)) is Conveyor n) RefreshBelt(n);
             }
-            if (b is Wall) RefreshWalls(b.Origin, b.Size); // neighbours let go of it
+            if (b is Wall) RefreshWalls(b.Cells); // neighbours let go of it
             BuildingsChanged?.Invoke();
         }
 
-        void Register(Building b, Vector2Int size)
+        void Register(Building b)
         {
             buildings.Add(b);
-            foreach (var c in Footprint(b.Origin, size))
+            foreach (var c in b.Cells)
             {
                 map.Buildings[c.x, c.y] = b;
                 if (decor != null) decor.SetDepositVisible(c, false); // the miner sits on the crystals
@@ -749,62 +799,60 @@ namespace DungeonConveyor
 
         void ShowGhost(BuildingCatalog.Entry e, Vector2Int origin, int level, bool ok)
         {
-            ghost.enabled = e.Sprite != null;
-            ghost.sprite = e.Sprite;
-            ghost.color = ok ? GhostOk : GhostBad;
-            ghost.transform.position = FootprintCenter(origin, e.Size, level);
-
-            int i = 0;
-            foreach (var c in Footprint(origin, e.Size))
+            var model = GhostModel(e);
+            if (model != null)
             {
-                if (i == marks.Count)
-                {
-                    var m = NewSprite("Mark", transform);
-                    m.sprite = BlockArt.Highlight;
-                    m.sortingOrder = short.MaxValue - 2;
-                    marks.Add(m);
-                }
-                var mark = marks[i++];
-                mark.enabled = true;
-                mark.color = ok ? MarkOk : MarkBad;
-                mark.transform.position = map.HasCell(c) ? map.SurfaceCenter(c) : map.CellCenter(c) + Vector3.up * (level * IsoGrid.StepHeight);
+                model.transform.parent.SetPositionAndRotation(map.FootprintCenter(origin, e.Size, level), map.FootprintFrame(origin, e.Size));
+                PlanetArt.Paint(model, PlanetArt.Ghost(ok ? ModelOk : ModelBad));
+                model.transform.parent.gameObject.SetActive(true);
+                shownGhost = model.transform.parent.gameObject;
             }
+            foreach (var c in map.Footprint(origin, e.Size)) Mark(c, level, ok);
+        }
+
+        /// <summary>A see-through copy of the entry's model, made on first use.</summary>
+        GameObject GhostModel(BuildingCatalog.Entry e)
+        {
+            if (e.Model == null) return null;
+            if (ghostModels.TryGetValue(e, out var model) && model != null) return model;
+            model = ghostModels[e] = BuildingModels.Spawn(e.Model, Vector3.zero, Quaternion.identity, Vector3.one * (e.Scale * IsoGrid.FootprintScale(e.Size)), 0f, ghostRoot);
+            var fx = model.GetComponent<BuildingFx>();
+            if (fx != null) fx.enabled = false;
+            model.transform.parent.gameObject.SetActive(false);
+            return model;
+        }
+
+        /// <summary>Marks one cell flat on the ground, green or red.</summary>
+        void Mark(Vector2Int c, int level, bool ok)
+        {
+            if (usedMarks == marks.Count)
+            {
+                var m = NewSprite("Mark", transform);
+                m.sprite = BlockArt.Highlight;
+                marks.Add(m);
+            }
+            var mark = marks[usedMarks++];
+            mark.enabled = true;
+            mark.color = ok ? MarkOk : MarkBad;
+            PlanetArt.LayFlat(mark.transform, map, c, Mathf.Max(level, HeightAt(c)), 0.04f);
         }
 
         SpriteRenderer BeltGhost(int i)
         {
-            while (beltGhosts.Count <= i)
-            {
-                var g = NewSprite("BeltGhost", transform);
-                g.sortingOrder = short.MaxValue - 3;
-                beltGhosts.Add(g);
-            }
+            while (beltGhosts.Count <= i) beltGhosts.Add(NewSprite("BeltGhost", transform));
             return beltGhosts[i];
         }
 
         void HideGhosts()
         {
-            if (ghost != null) ghost.enabled = false;
+            if (shownGhost != null) shownGhost.SetActive(false);
+            shownGhost = null;
+            usedMarks = 0;
             foreach (var m in marks) m.enabled = false;
             foreach (var g in beltGhosts) g.enabled = false;
-            foreach (var g in wallGhosts) g.enabled = false;
         }
 
         // ---------------------------------------------------------------- helpers
-
-        static IEnumerable<Vector2Int> Footprint(Vector2Int origin, Vector2Int size)
-        {
-            for (int x = 0; x < size.x; x++)
-                for (int y = 0; y < size.y; y++)
-                    yield return origin + new Vector2Int(x, y);
-        }
-
-        Vector3 FootprintCenter(Vector2Int origin, Vector2Int size, int level)
-        {
-            var sum = Vector3.zero;
-            foreach (var c in Footprint(origin, size)) sum += map.CellCenter(c);
-            return sum / (size.x * size.y) + Vector3.up * (level * IsoGrid.StepHeight);
-        }
 
         SpriteRenderer NewSprite(string name, Transform parent)
         {

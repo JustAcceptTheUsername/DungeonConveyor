@@ -75,6 +75,28 @@ namespace DungeonConveyor
         }
         PickAnim pickAnim;
 
+        // Toasts: short announcements under the top bar (elite waves, landing sites, relics, wrecked belts).
+        class Toast { public string Title, Body; public Color Color; public float T0; }
+        readonly List<Toast> toasts = new List<Toast>();
+        // Kill combo: kills less than ComboWindow apart chain up; every 10 pays a little gold.
+        const float ComboWindow = 2.5f;
+        int combo, comboBest;
+        float comboLast = -10f, comboPop = -10f;
+        bool wavesHooked, spiresHooked, mapPaid;
+        SpireRelics spires;
+
+        static readonly string[] EliteNames = { "", "SHIELDED", "SPLITTING", "SABOTEURS", "SWIFT", "REGENERATING" };
+        static readonly string[] EliteTexts =
+        {
+            "",
+            "Every enemy carries a shield worth 60% of its health.",
+            "Every enemy splits in two when it dies.",
+            "Every enemy goes for your belts first and wrecks them.",
+            "Every enemy moves 40% faster.",
+            "Every enemy heals 4% of its health per second.",
+        };
+        public static string EliteName(EliteModifier m) => EliteNames[(int)m];
+
         // Pending tooltip (drawn last, on top).
         string tipTitle, tipTag, tipBody;
         Rect tipAnchor;
@@ -83,9 +105,16 @@ namespace DungeonConveyor
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() => blockers.Clear();
 
+        /// <summary>Lets other windows (the tutorial checklist) keep clicks from reaching the world.</summary>
+        public static void AddBlocker(Rect px)
+        {
+            if (Event.current.type == EventType.Repaint) blockers.Add(px);
+        }
+
         /// <summary>True when the screen position (Input System, origin bottom-left) is over a HUD panel.</summary>
         public static bool IsPointerOverUI(Vector2 screenPos)
         {
+            if (SettingsMenu.IsOpen || Tutorial.PagesOpen) return true; // a window covers the whole screen
             var p = new Vector2(screenPos.x, UnityEngine.Screen.height - screenPos.y);
             foreach (var r in blockers) if (r.Contains(p)) return true;
             return false;
@@ -113,6 +142,10 @@ namespace DungeonConveyor
             if (cam == null) cam = Camera.main;
             float dt = Time.unscaledDeltaTime;
             Hook();
+            HookEvents();
+            UpdateMusic();
+            if (combo > 0 && Time.unscaledTime - comboLast > ComboWindow) combo = 0;
+            toasts.RemoveAll(x => Time.unscaledTime - x.T0 > 4.5f);
             fx.Update(dt);
             gold.Tick(dt);
             goldRed.Tick(dt); goldFlash.Tick(dt); coreFlash.Tick(dt); coreShake.Tick(dt);
@@ -127,7 +160,7 @@ namespace DungeonConveyor
             TrackOffer();
             ReadKeys();
 
-            GameSpeed.Apply(CoreLost || Picking || Cleared);
+            GameSpeed.Apply(CoreLost || Picking || Cleared || SettingsMenu.IsOpen || Tutorial.PagesOpen);
         }
 
         /// <summary>Subscribes to the gold and Core events once their sources exist.</summary>
@@ -151,6 +184,71 @@ namespace DungeonConveyor
         {
             if (build != null) build.GoldChanged -= OnGold;
             if (hookedCore != null) hookedCore.Damaged -= OnCoreDamaged;
+            Sfx.StopAllLoops();
+        }
+
+        bool lostPlayed, clearedPlayed;
+
+        /// <summary>Game music (boss music while a boss is alive), the map's ambience, and the end-of-map stingers.</summary>
+        void UpdateMusic()
+        {
+            var lib = Sfx.Lib;
+            bool boss = waves != null && waves.Boss != null && lib.BossMusic.IsSet;
+            Sfx.PlayMusic(boss ? lib.BossMusic : lib.GameMusic);
+            Sfx.PlayAmbience(lib.GameAmbience);
+            if (CoreLost && !lostPlayed) { lostPlayed = true; Sfx.Play(lib.CoreDestroyed); Sfx.Play(lib.GameOver); }
+            if (Cleared && !clearedPlayed) { clearedPlayed = true; Sfx.Play(lib.MapCleared); }
+        }
+
+        void HookEvents()
+        {
+            if (!wavesHooked && waves != null)
+            {
+                wavesHooked = true;
+                waves.WaveStarted += (wave, elite) =>
+                {
+                    if (elite != EliteModifier.None) AddToast($"ELITE WAVE · {EliteName(elite)}", EliteTexts[(int)elite], new Color(0.85f, 0.5f, 1f));
+                };
+                waves.LandingSitesChanged += added => AddToast(added ? "NEW LANDING SITE" : "LANDING SITE MOVED",
+                    added ? "Meteors will strike a new spot too. Follow the red arrows." : "The meteors have picked a new spot. Follow the red arrows.", UIStyle.Danger);
+                waves.BeltWrecked += at => AddToast("BELT WRECKED", "Saboteurs are tearing up your belts!", new Color(1f, 0.6f, 0.25f));
+                waves.Killed += OnKilled;
+            }
+            if (!spiresHooked)
+            {
+                spires = GetComponent<SpireRelics>();
+                if (spires != null)
+                {
+                    spiresHooked = true;
+                    spires.Claimed += (at, relic) => AddToast(relic != null ? "SPIRE CLAIMED · " + relic.Title : "SPIRE CLAIMED",
+                        relic != null ? relic.Text : "Every relic is already yours.", UIStyle.GoldColor);
+                }
+            }
+            if (Cleared && !mapPaid)
+            {
+                mapPaid = true;
+                Meta.Earn(Meta.PerMap);
+            }
+        }
+
+        void AddToast(string title, string body, Color color)
+        {
+            toasts.Add(new Toast { Title = title, Body = body, Color = color, T0 = Time.unscaledTime });
+            if (toasts.Count > 3) toasts.RemoveAt(0);
+        }
+
+        void OnKilled(Enemy e)
+        {
+            float now = Time.unscaledTime;
+            combo = now - comboLast <= ComboWindow ? combo + 1 : 1;
+            comboLast = now;
+            comboBest = Mathf.Max(comboBest, combo);
+            if (combo >= 5 && combo % 5 == 0)
+            {
+                comboPop = now;
+                Sfx.Play(Sfx.Lib.Combo);
+            }
+            if (combo % 10 == 0) build.Earn(combo / 2, e.transform.position); // combo bonus
         }
 
         void OnGold(int delta, Vector3? from)
@@ -254,6 +352,7 @@ namespace DungeonConveyor
             {
                 warnedFor = waves.Wave + 1;
                 bossBannerT0 = Time.unscaledTime;
+                Sfx.Play(Sfx.Lib.BossIncoming);
             }
         }
 
@@ -267,6 +366,7 @@ namespace DungeonConveyor
             if (waves.Offer == curOffer) return;
             curOffer = waves.Offer;
             offerT0 = Time.unscaledTime;
+            Sfx.Play(Sfx.Lib.CardDeal);
             int w = waves.LastCleared.Wave;
             freshTally = w != tallyWave;
             tallyWave = w;
@@ -275,12 +375,13 @@ namespace DungeonConveyor
         void ReadKeys()
         {
             var k = Keyboard.current;
-            if (k == null) return;
+            if (k == null || SettingsMenu.IsOpen || Tutorial.PagesOpen) return;
             if (screen == Screen_.Cards && curOffer != null && !PickAnimating && Time.unscaledTime - offerT0 > DealEnd(curOffer.Count))
             {
                 int i = k.digit1Key.wasPressedThisFrame || k.numpad1Key.wasPressedThisFrame ? 0
                     : k.digit2Key.wasPressedThisFrame || k.numpad2Key.wasPressedThisFrame ? 1
-                    : k.digit3Key.wasPressedThisFrame || k.numpad3Key.wasPressedThisFrame ? 2 : -1;
+                    : k.digit3Key.wasPressedThisFrame || k.numpad3Key.wasPressedThisFrame ? 2
+                    : k.digit4Key.wasPressedThisFrame || k.numpad4Key.wasPressedThisFrame ? 3 : -1;
                 if (i >= 0 && i < curOffer.Count) PickCard(i);
             }
             else if (screen == Screen_.Cleared && screenT > 0.35f
@@ -298,7 +399,7 @@ namespace DungeonConveyor
 
         void NewRun()
         {
-            Run.Reset();
+            Run.Begin(); // same difficulty and starting wave as the run just lost
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
         }
 
@@ -326,6 +427,7 @@ namespace DungeonConveyor
             DrawHoverInfo();
             if (build.Catalog != null) DrawBuildBar();
             DrawBossBanner();
+            if (screen == Screen_.None) { DrawToasts(); DrawCombo(); DrawCornerButtons(); }
             if (CoreLost) DrawGameOver();
             else if (Picking && !PickAnimating) DrawCards();
             else if (Cleared) DrawStageCleared();
@@ -420,7 +522,7 @@ namespace DungeonConveyor
             bool clicked = false;
             bool over = enabled && r.Contains(Event.current.mousePosition);
             bool down = over && Mouse.current != null && Mouse.current.leftButton.isPressed;
-            if (enabled && GUI.Button(r, GUIContent.none, None)) clicked = true;
+            if (enabled && GUI.Button(r, GUIContent.none, None)) { clicked = true; Sfx.Click(); }
             if (Event.current.type == EventType.Repaint)
             {
                 if (!Skin)
@@ -599,9 +701,14 @@ namespace DungeonConveyor
             TxtC(cx, y + 125, cw * 0.5f, 30, waves.Alive.ToString(), 26, UIStyle.Parchment, true);
             TxtC(cx + cw * 0.5f, y + 125, cw * 0.5f, 30, waves.Kills.ToString(), 26, UIStyle.Parchment, true);
 
+            bool eliteNext = waves.NextElite != EliteModifier.None && !waves.BossNext;
             string next = waves.AllWavesSent ? "Final wave: clear the map"
-                : $"{(waves.BossNext ? "BOSS" : "Next wave")} in {Mathf.CeilToInt(Mathf.Max(0f, waves.NextWaveIn))}s";
-            TxtC(cx, y + 160, cw, 26, next, 20, waves.BossNext ? UIStyle.Danger : UIStyle.Parchment, false, true);
+                : $"{(waves.BossNext ? "BOSS" : eliteNext ? "ELITE" : "Next wave")} in {Mathf.CeilToInt(Mathf.Max(0f, waves.NextWaveIn))}s";
+            var nextColor = waves.BossNext ? UIStyle.Danger : eliteNext ? new Color(0.85f, 0.5f, 1f) : UIStyle.Parchment;
+            TxtC(cx, y + 160, cw, 26, next, 20, nextColor, false, true);
+            var nr = R(cx, y + 160, cw, 26);
+            if (eliteNext && !waves.AllWavesSent && nr.Contains(Event.current.mousePosition))
+                SetTip("Elite wave: " + EliteName(waves.NextElite), "NEXT WAVE", EliteTexts[(int)waves.NextElite], new Rect(cx, y + 160, cw, 26), true);
 
             if (GemButton(x + 22, y + 192, w - 44, 50, $"SEND NOW  +{waves.EarlyBonus}", 20, !waves.AllWavesSent)) waves.CallEarly();
 
@@ -720,13 +827,15 @@ namespace DungeonConveyor
             GUIUtility.ScaleAroundPivot(Vector2.one * bsc, new Vector2(vw * 0.5f * s, 160 * s));
             GUI.color = new Color(1f, 1f, 1f, ba);
             if (Skin) UIStyle.Nine(R((vw - 620) * 0.5f, 112, 620, 96), ArcaneSkin.Banner, s);
-            Txt((vw - 620) * 0.5f, 112, 620, 96, boss ? "BOSS WAVE CLEARED" : $"WAVE {cleared} CLEARED", 40, new Color(UIStyle.Parchment.r, UIStyle.Parchment.g, UIStyle.Parchment.b, ba), TextAnchor.MiddleCenter, true);
+            Txt((vw - 620) * 0.5f, 112, 620, 96, waves.PickingRelic ? "BOSS DEFEATED" : boss ? "BOSS WAVE CLEARED" : $"WAVE {cleared} CLEARED", 40, new Color(UIStyle.Parchment.r, UIStyle.Parchment.g, UIStyle.Parchment.b, ba), TextAnchor.MiddleCenter, true);
             Untint();
             GUI.matrix = old;
             if (age > 0.2f)
             {
                 int together = waves.ClearedTogether;
-                if (together > 1)
+                if (waves.PickingRelic)
+                    TxtC(0, 206, vw, 28, "Claim a relic: it lasts the whole run", 22, UIStyle.GoldColor, false, true);
+                else if (together > 1)
                     TxtC(0, 206, vw, 28, $"{together} waves cleared together  ·  rarity boosted!", 22, Run.ColorOf(Rarity.Epic), false, true);
                 else TxtC(0, 206, vw, 28, "Choose an upgrade", 22, UIStyle.Muted);
             }
@@ -750,10 +859,10 @@ namespace DungeonConveyor
 
             float bottom = CardTop + CardH + 22;
             if (age > DealEnd(offer.Count) - 0.2f)
-                TxtC(0, bottom, vw, 26, "Press 1, 2 or 3, or click a card", 18, UIStyle.Muted);
+                TxtC(0, bottom, vw, 26, offer.Count > 3 ? "Press 1-4, or click a card" : "Press 1, 2 or 3, or click a card", 18, UIStyle.Muted);
             if (waves.CardsOwed > 1)
                 TxtC(0, bottom + 26, vw, 26, $"{waves.CardsOwed - 1} more pick{(waves.CardsOwed > 2 ? "s" : "")} after this one", 16, UIStyle.Muted);
-            DrawRarityOdds(bottom + 58, waves.PickLuck);
+            if (!waves.PickingRelic) DrawRarityOdds(bottom + 58, waves.PickLuck);
         }
 
         /// <summary>The chance of each rarity for these picks, each in its colour.</summary>
@@ -844,6 +953,7 @@ namespace DungeonConveyor
             var rects = new Rect[offer.Count];
             for (int k = 0; k < rects.Length; k++) rects[k] = CardRect(k, offer.Count);
             pickAnim = new PickAnim { Cards = new List<Run.Card>(offer), Rects = rects, Chosen = i, T0 = Time.unscaledTime };
+            Sfx.Play(Sfx.Lib.CardPick);
             waves.Pick(card);
             int slot = Mathf.Min(Run.Taken.Count - 1, UpCols * UpRows - 1);
             var ur = UpgradeRect(Mathf.Max(0, slot));
@@ -916,7 +1026,12 @@ namespace DungeonConveyor
                 TxtC(col.x, col.y, col.width, 22, labels[i], 16, UIStyle.Muted, false, true);
                 TxtC(col.x, col.y + 22, col.width, 44, vals[i].ToString("N0"), 34, colors[i], true);
             }
-            TxtC(x + 40, y + 142, w - 80, 30, "Your gold, upgrades and unlocked buildings carry over to the next map.", 18, UIStyle.Parchment, false, false, true);
+            // Summary line: gold earned, most valuable tower, longest belt, Essence.
+            var mvp = MostValuableTower();
+            string mvpText = mvp != null ? $"MVP {mvp.Def.Name} ({mvp.DamageDealt:N0} dmg)" : "No towers";
+            TxtC(x + 40, y + 142, w - 80, 30,
+                $"{build.GoldEarned:N0} gold earned  ·  {mvpText}  ·  longest belt {LongestBelt()} tiles  ·  best combo x{comboBest}  ·  +{Meta.EarnedThisRun} essence this run",
+                18, UIStyle.Parchment, false, false, true);
 
             if (age > 1.1f)
             {
@@ -1001,7 +1116,10 @@ namespace DungeonConveyor
             if (owned) TxtC(x, ry, w, 46, "UNLOCKED", 18, new Color(0.4f, 0.9f, 0.45f), true);
             else if (!available) TxtC(x, ry, w, 46, $"After map {item.AvailableAfterMap}", 17, UIStyle.Muted, false, true);
             else if (GemButton(x + 22, ry, w - 44, 46, $"{item.Crystals:N0}", 20, afford, afford) && Run.TryUnlock(e.Id))
+            {
+                Sfx.Play(Sfx.Lib.ShopUnlock);
                 glint[e] = 0f;
+            }
             if (!owned && available && Skin) Icon(ArcaneSkin.GemRare, x + 32, ry + 11, 24, 24, afford ? 1f : 0.45f);
             return over;
         }
@@ -1038,12 +1156,24 @@ namespace DungeonConveyor
             else if (b is Refiner r)
             {
                 title = r.Def.Name;
-                body = $"Refining {r.Input.Count}, ready {r.Output.Count}  ·  value ×{(flow != null ? flow.RefinedMultiplier : 1f):0.#}";
+                body = $"Refining {r.Input.Count}, ready {r.Output.Count}  ·  value ×{(flow != null ? flow.RefinedMultiplier : 1f):0.#}  ·  two different ores fuse into an alloy";
             }
             else if (b is Tower t && t.Def.Attack != AttackKind.None)
             {
                 title = t.Def.Name;
                 body = Stats(t.Def);
+                var combat = GetComponent<Combat>();
+                if (combat != null && t.Def.Attack != AttackKind.Mine && combat.HighGround(t.Level) > 0f)
+                    body += $"  ·  high ground +{combat.HighGround(t.Level) * 100f:0}% range";
+                if (t.AnyBoost)
+                {
+                    var parts = new List<string>();
+                    if (t.Boosted(OreBoost.FireRate)) parts.Add($"speed {t.Boost[0]:0}s");
+                    if (t.Boosted(OreBoost.Range)) parts.Add($"range {t.Boost[1]:0}s");
+                    if (t.Boosted(OreBoost.Damage)) parts.Add($"damage {t.Boost[2]:0}s");
+                    body += "  ·  boosted: " + string.Join(", ", parts);
+                }
+                else if (t.TakesCrystals) body += "  ·  feed it crystals by belt for a boost";
             }
             else if (b == null && map.IsOre(c))
             {
@@ -1193,13 +1323,92 @@ namespace DungeonConveyor
             return text;
         }
 
+        // ---------------------------------------------------------------- toasts, combo, summary
+
+        /// <summary>Help (the tutorial pages) and Settings, at the bottom right.</summary>
+        void DrawCornerButtons()
+        {
+            const float w = 170, h = 52, gap = 10;
+            float x = vw - 2 * w - gap - 14, y = vh - h - 14;
+            if (GemButton(x, y, w, h, "HELP", 20)) Tutorial.OpenPages();
+            if (GemButton(x + w + gap, y, w, h, "SETTINGS", 20)) SettingsMenu.Open();
+        }
+
+        /// <summary>Announcements slide in under the top bar, hold, then fade.</summary>
+        void DrawToasts()
+        {
+            float y = waves != null && waves.Boss != null ? 176 : 100;
+            if (build.Placing != null) y += 84;
+            foreach (var toast in toasts)
+            {
+                float age = Time.unscaledTime - toast.T0;
+                float a = Mathf.Clamp01(age / 0.2f) * (1f - Mathf.Clamp01((age - 3.8f) / 0.7f));
+                float slide = (1f - HudFx.OutCubic(Mathf.Clamp01(age / 0.3f))) * 30f;
+                const float w = 640, h = 78;
+                float x = (vw - w) * 0.5f;
+                GUI.color = new Color(1f, 1f, 1f, a);
+                Frame(x, y - slide, w, h, ArcaneSkin.Banner, false);
+                Untint();
+                TxtC(x + 30, y - slide + 8, w - 60, 30, toast.Title, 23, new Color(toast.Color.r, toast.Color.g, toast.Color.b, a), true);
+                TxtC(x + 40, y - slide + 38, w - 80, 30, toast.Body, 16, new Color(UIStyle.Parchment.r, UIStyle.Parchment.g, UIStyle.Parchment.b, a), false, false, true);
+                y += h + 6;
+            }
+        }
+
+        /// <summary>The kill combo on the right edge: grows with the count, pops every fifth kill, fades as it runs out.</summary>
+        void DrawCombo()
+        {
+            if (combo < 3) return;
+            float left = 1f - Mathf.Clamp01((Time.unscaledTime - comboLast) / ComboWindow);
+            float pop = 1f + 0.35f * (1f - Mathf.Clamp01((Time.unscaledTime - comboPop) / 0.3f));
+            float size = Mathf.Min(64f, 30f + combo * 1.2f) * pop;
+            float x = vw - 260, y = 500; // below the tutorial checklist
+            var col = Color.Lerp(UIStyle.Parchment, UIStyle.GoldColor, Mathf.Clamp01(combo / 20f));
+            col.a = 0.4f + 0.6f * left;
+            Txt(x, y, 230, 70, $"x{combo}", size, col, TextAnchor.MiddleRight, true);
+            Txt(x, y + 62, 230, 24, "COMBO", 17, new Color(UIStyle.Muted.r, UIStyle.Muted.g, UIStyle.Muted.b, col.a), TextAnchor.MiddleRight, false, true);
+            if (Event.current.type == EventType.Repaint)
+            {
+                GUI.color = new Color(col.r, col.g, col.b, 0.8f * col.a);
+                GUI.DrawTexture(R(x + 230 - 140 * left, y + 90, 140 * left, 4), UIStyle.White);
+                Untint();
+            }
+        }
+
+        /// <summary>The tower that has dealt the most damage this map.</summary>
+        Tower MostValuableTower()
+        {
+            Tower best = null;
+            foreach (var b in build.Buildings)
+                if (b is Tower t && (best == null || t.DamageDealt > best.DamageDealt)) best = t;
+            return best != null && best.DamageDealt > 0f ? best : null;
+        }
+
+        /// <summary>Tiles in the longest run of belts each feeding the next.</summary>
+        int LongestBelt()
+        {
+            int best = 0;
+            var seen = new HashSet<Conveyor>();
+            foreach (var start in build.Conveyors)
+            {
+                // Start at belts nothing feeds.
+                if (map.BuildingAt(start.InCell) is Conveyor feeder && feeder.OutCell == start.Cell) continue;
+                seen.Clear();
+                int n = 0;
+                for (var c = start; c != null && seen.Add(c); n++)
+                    c = map.BuildingAt(c.OutCell) is Conveyor next ? next : null;
+                best = Mathf.Max(best, n);
+            }
+            return best;
+        }
+
         // ---------------------------------------------------------------- game over
 
         void DrawGameOver()
         {
             Dim(0.45f);
             bool boss = waves != null && waves.BossHealthAtLoss >= 0f;
-            float w = 640, h = boss ? 470 : 430;
+            float w = 640, h = boss ? 504 : 464;
             float x = (vw - w) * 0.5f, y = (vh - h) * 0.5f + 20;
             float age = screenT;
             float sc = Mathf.Lerp(0.92f, 1f, HudFx.OutBack(age / 0.3f)), al = Mathf.Clamp01(age / 0.2f);
@@ -1224,6 +1433,8 @@ namespace DungeonConveyor
             }
             float by = y + 196;
             if (flow != null) { TxtC(x + 40, by, w - 80, 26, $"{flow.GoldFromOre:N0} gold earned from crystals", 18, UIStyle.Muted); by += 30; }
+            TxtC(x + 40, by, w - 80, 28, $"+{Meta.EarnedThisRun} essence earned  ·  {Meta.Essence} to spend in the main menu", 20, new Color(0.75f, 0.6f, 1f), false, true);
+            by += 34;
             if (boss)
             {
                 int pct = Pct(waves.BossHealthAtLoss);

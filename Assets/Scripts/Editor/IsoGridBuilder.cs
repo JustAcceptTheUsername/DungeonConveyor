@@ -54,8 +54,6 @@ namespace DungeonConveyor.EditorTools
             ground.CompressBounds();
 
             var iso = gridGo.AddComponent<IsoGrid>();
-            iso.Width = Size;
-            iso.Height = Size;
             iso.Ground = ground;
 
             FrameCamera(iso);
@@ -141,10 +139,9 @@ namespace DungeonConveyor.EditorTools
             Undo.RecordObject(cam, "Frame Camera");
             Undo.RecordObject(cam.transform, "Frame Camera");
 
-            var b = iso.WorldBounds;
-            cam.orthographic = true;
-            cam.orthographicSize = Mathf.Max(b.extents.y, b.extents.x / (16f / 9f)) * 1.05f;
-            cam.transform.SetPositionAndRotation(new Vector3(b.center.x, b.center.y, -10f), Quaternion.identity);
+            // The planet is built at runtime around the origin; CameraController takes over from here in Play.
+            cam.orthographic = false;
+            cam.transform.SetPositionAndRotation(new Vector3(0f, 0f, -40f), Quaternion.identity);
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = new Color(0.02f, 0.015f, 0.02f);
 

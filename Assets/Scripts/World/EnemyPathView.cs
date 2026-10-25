@@ -4,7 +4,7 @@ using UnityEngine;
 namespace DungeonConveyor
 {
     /// <summary>
-    /// Shows the route enemies will take: a trail of arrows from each bridge landing to the Core, following the
+    /// Shows the route enemies will take: a trail of arrows from each meteor landing site to the Core, following the
     /// same flow field they walk. Redrawn whenever buildings change, so walls and towers visibly bend it.
     /// A pulse runs along the arrows toward the Core.
     /// </summary>
@@ -39,6 +39,7 @@ namespace DungeonConveyor
             root.SetParent(transform, false);
             flow = new FlowField(map);
             build.BuildingsChanged += () => dirty = true;
+            map.SpawnsChanged += () => dirty = true;
         }
 
         void Update()
@@ -69,21 +70,20 @@ namespace DungeonConveyor
         {
             onPath.Clear();
             int used = 0;
-            foreach (var bridge in map.Bridges)
+            foreach (var site in map.Spawns)
             {
-                var c = bridge.Landing;
+                var c = site.Landing;
                 if (flow.Distance(c) == FlowField.Unreachable) continue;
-                // Paths from different bridges merge; draw shared cells once.
+                // Paths from different sites merge; draw shared cells once.
                 while (onPath.Add(c))
                 {
                     bool more = flow.Next(c, out var next);
-                    int dir = more ? Dir.Of(next - c) : IntoCore(c); // the last cell points into the Core
+                    int dir = more ? map.DirTo(c, next) : IntoCore(c); // the last cell points into the Core
                     if (dir >= 0)
                     {
                         var sr = Arrow(used++, flow.Distance(c));
                         sr.sprite = BlockArt.PathArrow(dir);
-                        sr.transform.position = map.SurfaceCenter(c);
-                        sr.sortingOrder = map.SortOrder(c) + 2; // over belts and mines on the cell, under enemies
+                        PlanetArt.LayFlat(sr.transform, map, c, map.Heights[c.x, c.y], 0.03f);
                     }
                     if (!more) break;
                     c = next;
@@ -94,8 +94,8 @@ namespace DungeonConveyor
 
         int IntoCore(Vector2Int c)
         {
-            for (int d = 0; d < 4; d++)
-                if (map.IsBase(c + Dir.Offsets[d])) return d;
+            for (int d = 0; d < map.Sides(c); d++)
+                if (map.IsBase(map.Neighbour(c, d))) return d;
             return -1;
         }
 

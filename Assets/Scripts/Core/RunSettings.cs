@@ -51,7 +51,18 @@ namespace DungeonConveyor
             [Tooltip("Shifts each wave's mix toward the toughest kinds unlocked: each kind's weight is multiplied by " +
                      "(1 + bias) ^ its toughness rank. 0 = the catalog's weights.")]
             public float TougherEnemyBias;
+            [Tooltip("Wave a run starts from by default on this difficulty (rounded down to the start of its map). " +
+                     "The player can still change it in the difficulty menu.")]
+            [Min(1)] public int StartWave = 1;
         }
+
+        [Header("Starting from a later wave (per map skipped)")]
+        [Tooltip("Gold added to the starting gold for each map skipped.")]
+        public int GoldPerSkippedMap = 150;
+        [Tooltip("Crystals banked for each map skipped.")]
+        public int CrystalsPerSkippedMap = 60;
+        [Tooltip("Rarity luck of the cards dealt for skipped waves, per map skipped (later maps hand out rarer cards).")]
+        public float LuckPerSkippedMap = 0.15f;
 
         [Header("Difficulty (chosen in the main menu; only changes enemy health and kinds)")]
         public int DefaultDifficulty = 1;
@@ -69,12 +80,12 @@ namespace DungeonConveyor
             },
             new Difficulty
             {
-                Name = "Overseer", HealthMultiplier = 1.35f, EnemyUnlockShift = 3, TougherEnemyBias = 0.5f,
+                Name = "Overseer", HealthMultiplier = 1.35f, EnemyUnlockShift = 3, TougherEnemyBias = 0.5f, StartWave = 11,
                 Description = OverseerText,
             },
             new Difficulty
             {
-                Name = "Abyssal", HealthMultiplier = 1.8f, EnemyUnlockShift = 6, TougherEnemyBias = 1f,
+                Name = "Abyssal", HealthMultiplier = 1.8f, EnemyUnlockShift = 6, TougherEnemyBias = 1f, StartWave = 21,
                 Description = AbyssalText,
             },
         };

@@ -4,158 +4,85 @@ using UnityEngine;
 namespace DungeonConveyor
 {
     /// <summary>
-    /// Enemy spawns: 1-4 winding bridges that come in from beyond the camera's reach and land on the map edge.
-    /// Enemies appear at the far (off-screen) end and walk across onto the landing cell.
+    /// Enemy spawns: 1-4 meteor landing sites (scorched red cells) spread around the planet, away from the bases.
+    /// Each enemy rides a meteor down from space onto its site, then walks to the Core (see Enemy).
     /// </summary>
     public partial class IsoGrid
     {
-        public class Bridge
+        public class SpawnSite
         {
-            public Vector2Int Landing;                                  // map cell the bridge arrives on (red)
-            public Vector2Int Direction;                                // overall heading from the landing outward
-            public readonly List<Vector2Int> Cells = new List<Vector2Int>(); // landing+1 .. off-screen end
-            public Vector2Int SpawnPoint => Cells[Cells.Count - 1];    // where enemies appear
+            public Vector2Int Landing;   // cell the meteors strike (red)
         }
 
-        /// <summary>World units past the map bounds a bridge must reach; more than the camera's margin.</summary>
-        const float BridgeOverhang = 5f;
-        const float SpawnSpacing = 10f;
-
-        public readonly List<Bridge> Bridges = new List<Bridge>();
+        public readonly List<SpawnSite> Spawns = new List<SpawnSite>();
 
         public bool IsSpawn(Vector2Int c)
         {
-            foreach (var b in Bridges)
-                if (b.Landing == c) return true;
+            foreach (var s in Spawns)
+                if (s.Landing == c) return true;
             return false;
         }
 
-        bool NearSpawn(Vector2 p, float distance)
+        bool NearSpawn(Vector2Int c, float distance)
         {
-            foreach (var b in Bridges)
-                if (Vector2.Distance(p, (Vector2)b.Landing + Vector2.one * 0.5f) < distance) return true;
+            foreach (var s in Spawns)
+                if (Distance(c, s.Landing) < distance) return true;
             return false;
         }
 
-        /// <summary>Bridge decks sit level with their landing cell.</summary>
-        public int BridgeLevel(Bridge b) => Heights[b.Landing.x, b.Landing.y];
-        public Vector3 BridgeSurface(Bridge b, Vector2Int c) => CellCenter(c) + Vector3.up * (BridgeLevel(b) * StepHeight);
-
+        /// <summary>
+        /// Picks landing sites far from every base (preferably on the far side of the planet) and far from each other;
+        /// the distances relax if the planet is too small for them.
+        /// </summary>
         void PlaceSpawns()
         {
-            Bridges.Clear();
-            var candidates = new List<Bridge>();
-            for (int x = 0; x < Width; x++)
-                for (int y = 0; y < Height; y++)
-                {
-                    var c = new Vector2Int(x, y);
-                    if (!Exists[x, y] || IsBase(c)) continue;
-                    foreach (var d in Neighbours)
-                        if (!HasCell(c + d) && TryLayBridge(c, d, out var bridge))
-                            candidates.Add(bridge);
-                }
-            for (int i = candidates.Count - 1; i > 0; i--)
-            {
-                int j = Random.Range(0, i + 1);
-                (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
-            }
-
-            // Prefer spawns far from the base; relax the distance if the map shape doesn't allow it.
+            Spawns.Clear();
             int target = Random.Range(SpawnCount.x, SpawnCount.y + 1);
-            float minBase = SpawnMinDistance;
-            var taken = new HashSet<Vector2Int>(); // chosen bridge cells plus a one-cell border
-            for (int pass = 0; pass < 6 && Bridges.Count < target; pass++, minBase *= 0.75f)
-                foreach (var cand in candidates)
+            float halfRound = Mathf.PI * Radius;                      // distance to the opposite point
+            float minBase = Mathf.Max(SpawnMinDistance, halfRound * 0.6f);
+            float spacing = halfRound * 0.45f;
+            for (int pass = 0; pass < 8 && Spawns.Count < target; pass++, minBase *= 0.85f, spacing *= 0.8f)
+                for (int tries = 0; tries < 2000 && Spawns.Count < target; tries++)
                 {
-                    if (Bridges.Count >= target) break;
-                    if (Bridges.Contains(cand)) continue;
-                    var landing = (Vector2)cand.Landing + Vector2.one * 0.5f;
-                    if (DistanceToBase(landing) < minBase || NearSpawn(landing, SpawnSpacing)) continue;
-                    if (cand.Cells.Exists(taken.Contains)) continue;
-                    Bridges.Add(cand);
-                    foreach (var c in cand.Cells)
-                    {
-                        taken.Add(c);
-                        foreach (var d in Neighbours) taken.Add(c + d);
-                    }
+                    var c = new Vector2Int(Random.Range(0, Width), Random.Range(0, Height));
+                    if (IsBase(c) || IsPentagon(c) || DistanceToBase(c) < Mathf.Min(minBase, halfRound * 0.95f) || NearSpawn(c, spacing)) continue;
+                    Spawns.Add(new SpawnSite { Landing = c });
                 }
 
-            if (Bridges.Count == 0) Debug.LogWarning("IsoGrid: no room for an enemy spawn bridge on this map shape.");
+            if (Spawns.Count == 0) Debug.LogWarning("IsoGrid: no room for a meteor landing site.");
         }
+
+        /// <summary>Raised after a landing site was added or moved during play.</summary>
+        public event System.Action SpawnsChanged;
 
         /// <summary>
-        /// Lays a winding bridge out from an edge cell until past the camera's reach: runs of 2-5 cells heading
-        /// outward, broken by 1-3 cell sidesteps. Fails if it would cross or brush against land, so it always
-        /// reads as a lone bridge over the void. A few random layouts are tried before giving up.
+        /// Mid-game: adds a landing site (add) or moves a random one somewhere new. The new site is a free cell the
+        /// enemies can already walk to the Core from (the terrain doesn't change mid-game), far from the bases and the
+        /// other sites. False if no such cell was found.
         /// </summary>
-        bool TryLayBridge(Vector2Int landing, Vector2Int dir, out Bridge bridge)
+        public bool MoveOrAddLandingSite(bool add)
         {
-            for (int attempt = 0; attempt < 3; attempt++)
-                if (TryWindingBridge(landing, dir, out bridge)) return true;
-            bridge = null;
+            if (!add && Spawns.Count == 0) return false;
+            var reachable = ReachableFromBase();
+            float halfRound = Mathf.PI * Radius;
+            float minBase = Mathf.Min(SpawnMinDistance, halfRound * 0.5f), spacing = halfRound * 0.25f;
+            var moving = add ? null : Spawns[Random.Range(0, Spawns.Count)];
+            for (int pass = 0; pass < 4; pass++, minBase *= 0.8f, spacing *= 0.7f)
+                for (int tries = 0; tries < 1500; tries++)
+                {
+                    var c = new Vector2Int(Random.Range(0, Width), 0);
+                    if (!reachable[c.x, c.y] || IsBase(c) || IsPentagon(c) || IsOre(c) || IsSpawn(c) || BuildingAt(c) != null) continue;
+                    if (DistanceToBase(c) < minBase) continue;
+                    bool crowded = false;
+                    foreach (var s in Spawns)
+                        if (s != moving && Distance(c, s.Landing) < spacing) crowded = true;
+                    if (crowded) continue;
+                    if (add) Spawns.Add(new SpawnSite { Landing = c });
+                    else moving.Landing = c;
+                    SpawnsChanged?.Invoke();
+                    return true;
+                }
             return false;
         }
-
-        bool TryWindingBridge(Vector2Int landing, Vector2Int dir, out Bridge bridge)
-        {
-            bridge = new Bridge { Landing = landing, Direction = dir };
-            var side = new Vector2Int(dir.y, dir.x);
-            var c = landing;
-            int run = Random.Range(2, 4); // leave the shore straight before the first turn
-            while (bridge.Cells.Count < 200)
-            {
-                for (int i = 0; i < run; i++)
-                {
-                    if (!Extend(bridge, ref c, dir)) return false;
-                    if (BeyondReach(c)) return true;
-                }
-
-                // Sidestep left or right; at least 2 outward cells follow, so the bridge never touches itself.
-                if (Random.value < 0.65f)
-                {
-                    var step = Random.value < 0.5f ? side : -side;
-                    int steps = Random.Range(1, 4);
-                    for (int i = 0; i < steps; i++)
-                        if (!Extend(bridge, ref c, step)) return false;
-                }
-                run = Random.Range(2, 6);
-            }
-            return false;
-        }
-
-        /// <summary>Adds the next cell if it and all its neighbours (other than where it came from) are void.</summary>
-        bool Extend(Bridge bridge, ref Vector2Int c, Vector2Int step)
-        {
-            var next = c + step;
-            if (HasCell(next)) return false;
-            foreach (var d in Neighbours)
-                if (d != -step && HasCell(next + d)) return false;
-            bridge.Cells.Add(next);
-            c = next;
-            return true;
-        }
-
-        bool BeyondReach(Vector2Int c)
-        {
-            var reach = WorldBounds;
-            var p = CellCenter(c);
-            return p.x < reach.min.x - BridgeOverhang || p.x > reach.max.x + BridgeOverhang ||
-                   p.y < reach.min.y - BridgeOverhang || p.y > reach.max.y + BridgeOverhang;
-        }
-
-        /// <summary>
-        /// Which sides of bridge cell i connect onward (bit 1 = +x, 2 = -x, 4 = +y, 8 = -y), and whether its
-        /// planks run across the grid x axis (it was entered along x).
-        /// </summary>
-        public static void BridgeShape(Bridge b, int i, out int connections, out bool alongX)
-        {
-            var c = b.Cells[i];
-            var prev = i == 0 ? b.Landing : b.Cells[i - 1];
-            var next = i + 1 < b.Cells.Count ? b.Cells[i + 1] : c + (c - prev); // the far end keeps going off-screen
-            connections = SideBit(prev - c) | SideBit(next - c);
-            alongX = (c - prev).x != 0;
-        }
-
-        static int SideBit(Vector2Int d) => d.x > 0 ? 1 : d.x < 0 ? 2 : d.y > 0 ? 4 : 8;
     }
 }

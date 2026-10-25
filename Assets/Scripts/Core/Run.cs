@@ -19,24 +19,27 @@ namespace DungeonConveyor
     {
         public struct StageConfig
         {
-            public int Size;     // map is Size x Size cells
-            public int Bridges;  // enemy spawn bridges
+            public int Size;     // planet size: about 6 x Size² hex tiles (see IsoGrid.FaceSize)
+            public int Bridges;  // meteor landing sites
             public int Cores;    // Cores to defend
             public int Waves;    // waves to clear before the next map
         }
 
-        /// <summary>Stage layouts in order; the last one repeats. Maps never exceed MaxMapSize. (Sizes 1.5x Dido's first pass: more room to build.)</summary>
+        /// <summary>
+        /// Stage layouts in order (each a bigger planet); the last one repeats. Planets never exceed MaxMapSize.
+        /// A face of 12 gives 864 cells, about the old 30x30 first map.
+        /// </summary>
         static readonly StageConfig[] Stages =
         {
-            new StageConfig { Size = 30, Bridges = 1, Cores = 1, Waves = 10 },
-            new StageConfig { Size = 45, Bridges = 1, Cores = 1, Waves = 10 },
-            new StageConfig { Size = 60, Bridges = 2, Cores = 1, Waves = 10 },
-            new StageConfig { Size = 75, Bridges = 2, Cores = 2, Waves = 10 },
-            new StageConfig { Size = 90, Bridges = 3, Cores = 2, Waves = 10 },
-            new StageConfig { Size = 105, Bridges = 4, Cores = 3, Waves = 10 },
+            new StageConfig { Size = 18, Bridges = 1, Cores = 1, Waves = 10 },
+            new StageConfig { Size = 22, Bridges = 1, Cores = 1, Waves = 10 },
+            new StageConfig { Size = 26, Bridges = 2, Cores = 1, Waves = 10 },
+            new StageConfig { Size = 30, Bridges = 2, Cores = 2, Waves = 10 },
+            new StageConfig { Size = 34, Bridges = 3, Cores = 2, Waves = 10 },
+            new StageConfig { Size = 38, Bridges = 4, Cores = 3, Waves = 10 },
         };
 
-        public const int MaxMapSize = 105;
+        public const int MaxMapSize = 38;
         /// <summary>Every this many waves (counted across the run) only the boss comes.</summary>
         public const int BossEvery = 10;
 
@@ -62,7 +65,71 @@ namespace DungeonConveyor
         public enum CardIcon { Fire, Lightning, Frost, Poison, Damage, Speed, Range, Gold }
 
         /// <summary>What a card does. The first four match <see cref="Element"/>.</summary>
-        public enum CardKind { Fire, Lightning, Frost, Poison, Damage, FireRate, Range, Income, Fortune }
+        public enum CardKind { Fire, Lightning, Frost, Poison, Damage, FireRate, Range, Income, Fortune, Synergy, Relic }
+
+        /// <summary>Build-defining combos, each taken at most once per run (epic and legendary cards).</summary>
+        public enum Synergy
+        {
+            Combustion,    // burning and poisoned enemies explode when they die
+            Conduction,    // chilled enemies take double lightning damage
+            Shatter,       // chilled enemies take +40% damage from explosions
+            ChainReaction, // missile and mortar kills set off a small explosion
+            Overclock,     // towers next to a belt that is carrying crystals attack 25% faster
+        }
+
+        static readonly (string title, string text, CardIcon icon)[] SynergyInfo =
+        {
+            ("COMBUSTION", "Enemies that die while both burning and poisoned explode, hurting everything around them.", CardIcon.Fire),
+            ("CONDUCTION", "Chilled enemies take double lightning damage (Tesla bolts and lightning arcs).", CardIcon.Lightning),
+            ("SHATTER", "Chilled enemies take 40% more damage from explosions (missiles, mortars, mines).", CardIcon.Frost),
+            ("CHAIN REACTION", "Enemies killed by a missile or mortar blow up, damaging their neighbours.", CardIcon.Damage),
+            ("OVERCLOCK", "Towers standing next to a belt that carries crystals attack 25% faster.", CardIcon.Speed),
+        };
+
+        /// <summary>Lasting run bonuses: one of three after every boss, and one for each pentagon spire claimed.</summary>
+        public enum Relic
+        {
+            IronHeart,       // Core +30% max health, healed to full
+            MidasIdol,       // +30% bounty gold
+            Hourglass,       // all towers +15% attack speed
+            FarSight,        // all towers +1 range
+            EmberCrown,      // all towers +4 fire
+            ProspectorsPick, // miners dig 40% faster
+            ConveyorCharm,   // belts run 30% faster
+            CrystalLattice,  // +1 crystal banked per delivery
+            SiegePlating,    // the Core takes 25% less damage
+            FrostSigil,      // all towers +4 frost
+        }
+
+        static readonly (string title, string text, CardIcon icon)[] RelicInfo =
+        {
+            ("IRON HEART", "The Core gains 30% more maximum health and is healed to full.", CardIcon.Gold),
+            ("MIDAS IDOL", "Enemies pay 30% more bounty gold.", CardIcon.Gold),
+            ("HOURGLASS", "All towers attack 15% faster.", CardIcon.Speed),
+            ("FAR SIGHT", "All towers reach 1 cell further.", CardIcon.Range),
+            ("EMBER CROWN", "Every tower hit deals +4 fire damage and sets enemies on fire.", CardIcon.Fire),
+            ("PROSPECTOR'S PICK", "Miners dig 40% faster.", CardIcon.Gold),
+            ("CONVEYOR CHARM", "Belts carry crystals 30% faster.", CardIcon.Speed),
+            ("CRYSTAL LATTICE", "Every crystal delivered to the Core banks 1 more crystal.", CardIcon.Gold),
+            ("SIEGE PLATING", "The Core takes 25% less damage.", CardIcon.Damage),
+            ("FROST SIGIL", "Every tower hit deals +4 frost damage and chills enemies.", CardIcon.Frost),
+        };
+
+        public static readonly HashSet<Synergy> Synergies = new HashSet<Synergy>();
+        public static readonly List<Relic> Relics = new List<Relic>();
+        public static bool Has(Synergy s) => Synergies.Contains(s);
+        public static bool Has(Relic r) => Relics.Contains(r);
+
+        // Run-wide multipliers from relics.
+        public static float BountyMultiplier => Has(Relic.MidasIdol) ? 1.3f : 1f;
+        public static float MinerMultiplier => Has(Relic.ProspectorsPick) ? 1.4f : 1f;
+        public static float BeltMultiplier => Has(Relic.ConveyorCharm) ? 1.3f : 1f;
+        public static int CrystalBonus => Has(Relic.CrystalLattice) ? 1 : 0;
+        public static float CoreDamageTaken => Has(Relic.SiegePlating) ? 0.75f : 1f;
+        public static float CoreHealthMultiplier => Has(Relic.IronHeart) ? 1.3f : 1f;
+
+        /// <summary>Raised after any card or relic is applied (the Core listens for Iron Heart).</summary>
+        public static event System.Action<Card> Applied;
 
         public class Card
         {
@@ -76,6 +143,8 @@ namespace DungeonConveyor
             public CardKind Kind;
             public Rarity Rarity;
             public bool PerTower;    // a one-tower-type card (in the card gallery: not tied to a tower yet)
+            public Synergy SynergyKind;  // when Kind == Synergy
+            public Relic RelicKind;      // when Kind == Relic
         }
 
         public static readonly Mods Global = new Mods();
@@ -158,14 +227,69 @@ namespace DungeonConveyor
             }
             IncomeMultiplier += c.Income;
             Luck += c.Luck;
+            if (c.Kind == CardKind.Synergy) Synergies.Add(c.SynergyKind);
+            if (c.Kind == CardKind.Relic) Relics.Add(c.RelicKind);
             Taken.Add(c);
+            Applied?.Invoke(c);
+        }
+
+        /// <summary>A synergy card (always at least epic).</summary>
+        public static Card MakeSynergy(Synergy s, Rarity rarity = Rarity.Epic)
+        {
+            var info = SynergyInfo[(int)s];
+            return new Card
+            {
+                Kind = CardKind.Synergy, SynergyKind = s, Rarity = rarity < Rarity.Epic ? Rarity.Epic : rarity,
+                Title = info.title, Tag = "SYNERGY · WHOLE RUN", Text = info.text, Icon = info.icon,
+                Color = new Color(0.85f, 0.5f, 1f),
+            };
+        }
+
+        /// <summary>A relic as a card (legendary). Its global stat bonuses ride on Mods, so the towers pick them up.</summary>
+        public static Card MakeRelic(Relic r)
+        {
+            var info = RelicInfo[(int)r];
+            var c = new Card
+            {
+                Kind = CardKind.Relic, RelicKind = r, Rarity = Rarity.Legendary,
+                Title = info.title, Tag = "RELIC · WHOLE RUN", Text = info.text, Icon = info.icon,
+                Color = ColorOf(Rarity.Legendary),
+            };
+            if (r == Relic.Hourglass) c.Mods.FireRate = 0.15f;
+            if (r == Relic.FarSight) c.Mods.Range = 1f;
+            if (r == Relic.EmberCrown) c.Mods.Elements[(int)Element.Fire] = 4f;
+            if (r == Relic.FrostSigil) c.Mods.Elements[(int)Element.Frost] = 4f;
+            return c;
+        }
+
+        /// <summary>count different relics the run doesn't have yet (fewer if they run out).</summary>
+        public static List<Card> DrawRelics(int count)
+        {
+            var pool = new List<Relic>();
+            foreach (Relic r in System.Enum.GetValues(typeof(Relic)))
+                if (!Has(r)) pool.Add(r);
+            var cards = new List<Card>();
+            while (cards.Count < count && pool.Count > 0)
+            {
+                int i = Random.Range(0, pool.Count);
+                cards.Add(MakeRelic(pool[i]));
+                pool.RemoveAt(i);
+            }
+            return cards;
+        }
+
+        /// <summary>A random relic the run doesn't have, or null.</summary>
+        public static Card RandomRelic()
+        {
+            var one = DrawRelics(1);
+            return one.Count > 0 ? one[0] : null;
         }
 
         /// <summary>
         /// Three different upgrade cards, each rolling its own rarity with the given luck (see LuckFor). Tower-specific
         /// ones only name unlocked towers and favour tower types the player has built.
         /// </summary>
-        public static List<Card> Draw(BuildingCatalog catalog, ICollection<string> builtIds, float luck)
+        public static List<Card> Draw(BuildingCatalog catalog, ICollection<string> builtIds, float luck, int count = 3)
         {
             var towers = new List<BuildingCatalog.Entry>();
             if (catalog != null)
@@ -173,7 +297,7 @@ namespace DungeonConveyor
                     if (e.Purchasable && IsUnlocked(e.Id) && e.Attack != AttackKind.None && e.Attack != AttackKind.Slow) towers.Add(e);
 
             var cards = new List<Card>();
-            for (int guard = 0; cards.Count < 3 && guard < 50; guard++)
+            for (int guard = 0; cards.Count < count && guard < 60; guard++)
             {
                 var c = Roll(towers, builtIds, RollRarity(luck));
                 if (c != null && !cards.Exists(x => x.Title == c.Title && x.Tag == c.Tag)) cards.Add(c);
@@ -183,6 +307,14 @@ namespace DungeonConveyor
 
         static Card Roll(List<BuildingCatalog.Entry> towers, ICollection<string> builtIds, Rarity rarity)
         {
+            // Epic and legendary picks may be a synergy the run doesn't have yet.
+            if (rarity >= Rarity.Epic && Random.value < 0.35f)
+            {
+                var open = new List<Synergy>();
+                foreach (Synergy s in System.Enum.GetValues(typeof(Synergy)))
+                    if (!Has(s)) open.Add(s);
+                if (open.Count > 0) return MakeSynergy(open[Random.Range(0, open.Count)], rarity);
+            }
             if (rarity == Rarity.Legendary && Random.value < RunSettings.Instance.FortuneShareOfLegendaries)
                 return Make(CardKind.Fortune, rarity, null, false);
 
@@ -286,6 +418,8 @@ namespace DungeonConveyor
                 for (var k = CardKind.Fire; k <= CardKind.Range; k++) list.Add(Make(k, rarity, null, true));
             }
             list.Add(Make(CardKind.Fortune, Rarity.Legendary, null, false));
+            foreach (Synergy s in System.Enum.GetValues(typeof(Synergy))) list.Add(MakeSynergy(s));
+            foreach (Relic r in System.Enum.GetValues(typeof(Relic))) list.Add(MakeRelic(r));
             return list;
         }
 
@@ -306,6 +440,7 @@ namespace DungeonConveyor
             {
                 unlocksSeeded = true;
                 foreach (var s in RunSettings.Instance.StartingBuildings) unlocked.Add(s);
+                foreach (var s in Meta.StartingUnlocks()) unlocked.Add(s);
             }
             return unlocked.Contains(id);
         }
@@ -370,15 +505,7 @@ namespace DungeonConveyor
         public static StageConfig Current => StageAt(Stage);
 
         /// <summary>Waves are numbered across the whole run, so difficulty keeps climbing from stage to stage.</summary>
-        public static int FirstWave
-        {
-            get
-            {
-                int n = 1;
-                for (int i = 0; i < Stage; i++) n += StageAt(i).Waves;
-                return n;
-            }
-        }
+        public static int FirstWave => FirstWaveOf(Stage);
 
         public static int LastWave => FirstWave + Current.Waves - 1;
         public static bool IsBossWave(int wave) => wave > 0 && wave % BossEvery == 0;
@@ -397,6 +524,76 @@ namespace DungeonConveyor
             for (int i = 0; i < Global.Elements.Length; i++) Global.Elements[i] = 0f;
             perTower.Clear();
             Taken.Clear();
+            Synergies.Clear();
+            Relics.Clear();
+        }
+
+        // ---------------------------------------------------------------- starting wave
+
+        const string StartStageKey = "StartStage";
+
+        /// <summary>How many maps a run can skip at most (the last stage layout).</summary>
+        public static int MaxStartStage => Stages.Length - 1;
+
+        /// <summary>The first wave of a stage (stage 0 = wave 1).</summary>
+        public static int FirstWaveOf(int stage)
+        {
+            int n = 1;
+            for (int i = 0; i < stage; i++) n += StageAt(i).Waves;
+            return n;
+        }
+
+        /// <summary>The stage a wave belongs to.</summary>
+        public static int StageOfWave(int wave)
+        {
+            for (int s = MaxStartStage; s > 0; s--)
+                if (wave >= FirstWaveOf(s)) return s;
+            return 0;
+        }
+
+        /// <summary>The difficulty's default starting stage (from its StartWave).</summary>
+        public static int DefaultStartStage => StageOfWave(Difficulty.StartWave);
+
+        /// <summary>The stage a new run starts on, picked in the difficulty menu (remembered; -1 = the difficulty's default).</summary>
+        public static int StartStage
+        {
+            get
+            {
+                int s = PlayerPrefs.GetInt(StartStageKey, -1);
+                return s < 0 ? DefaultStartStage : Mathf.Clamp(s, 0, MaxStartStage);
+            }
+            set => PlayerPrefs.SetInt(StartStageKey, value);
+        }
+
+        /// <summary>
+        /// Starts a fresh run on StartStage. Skipped maps are paid out as if they had been played: starting gold and
+        /// crystals per map, the buildings their shops would have offered, and a random pick of every card their waves
+        /// would have dealt (rarer the further in).
+        /// </summary>
+        public static void Begin()
+        {
+            Reset();
+            Meta.BeginRun();
+            Crystals = Meta.StartingCrystals;
+            int skip = StartStage;
+            if (skip <= 0) return;
+            var settings = RunSettings.Instance;
+            Stage = skip;
+            CarriedGold = settings.GoldPerSkippedMap * skip;
+            Crystals += settings.CrystalsPerSkippedMap * skip;
+
+            IsUnlocked(""); // seed the starting buildings
+            foreach (var item in settings.Shop)
+                if (item.AvailableAfterMap <= skip) unlocked.Add(item.Id);
+
+            var catalog = BuildingCatalog.Instance;
+            int cards = (FirstWaveOf(skip) - 1) / Mathf.Max(1, settings.WavesPerCard);
+            var none = new List<string>();
+            for (int i = 0; i < cards; i++)
+            {
+                var hand = Draw(catalog, none, settings.LuckPerSkippedMap * (1 + i * skip / Mathf.Max(1, cards)));
+                if (hand.Count > 0) Apply(hand[Random.Range(0, hand.Count)]);
+            }
         }
 
         /// <summary>Moves on to the next stage, keeping the gold left over.</summary>

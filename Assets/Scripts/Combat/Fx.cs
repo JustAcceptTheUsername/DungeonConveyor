@@ -4,13 +4,12 @@ using UnityEngine;
 namespace DungeonConveyor
 {
     /// <summary>
-    /// Short-lived combat visuals built from one procedural soft-circle sprite: explosions, muzzle flashes, sparks,
-    /// flame puffs, plus line renderers for beams and range rings. Ticked by Combat.
+    /// Short-lived combat visuals built from one procedural soft-circle sprite, always turned to face the camera:
+    /// explosions, muzzle flashes, sparks, flame puffs, plus line renderers for beams and range rings on the planet.
+    /// Ticked by Combat.
     /// </summary>
     public static class Fx
     {
-        public const int Order = short.MaxValue - 20; // above the world, below the build ghost and hover
-
         class Effect
         {
             public SpriteRenderer Sr;
@@ -68,25 +67,27 @@ namespace DungeonConveyor
             sr.transform.SetParent(root, false);
             if (material != null) sr.sharedMaterial = material;
             sr.sprite = Soft;
-            sr.sortingOrder = Order;
             sr.color = color;
             sr.transform.position = pos;
-            sr.transform.localScale = new Vector3(startScale, startScale * 0.6f, 1f);
+            sr.transform.localScale = Vector3.one * startScale;
+            PlanetArt.Billboard(sr.transform);
             effects.Add(new Effect { Sr = sr, Velocity = velocity, Life = life, StartScale = startScale, EndScale = endScale, Color = color });
         }
 
-        /// <summary>Explosion covering a grid radius (drawn as the matching isometric ellipse).</summary>
-        public static void Explosion(Vector3 pos, float gridRadius, Color color)
+        /// <summary>Explosion covering a radius in cells.</summary>
+        public static void Explosion(Vector3 pos, float radius, Color color)
         {
-            Spawn(pos, color, 0.2f, gridRadius * 2f * 0.71f, 0.35f);
-            Spawn(pos, new Color(1f, 0.95f, 0.8f, 0.9f), 0.15f, gridRadius * 0.8f, 0.18f);
+            Spawn(pos, color, 0.2f, radius * 2f, 0.35f);
+            Spawn(pos, new Color(1f, 0.95f, 0.8f, 0.9f), 0.15f, radius * 0.8f, 0.18f);
         }
 
+        /// <summary>A puff with a few sparks flying up off the planet.</summary>
         public static void Burst(Vector3 pos, Color color, float size)
         {
             Spawn(pos, color, size * 0.3f, size, 0.3f);
+            var up = pos.normalized;
             for (int i = 0; i < 4; i++)
-                Spawn(pos, color, size * 0.25f, 0.05f, 0.4f, new Vector3(Random.Range(-1f, 1f), Random.Range(0.2f, 1.2f), 0f));
+                Spawn(pos, color, size * 0.25f, 0.05f, 0.4f, Vector3.ProjectOnPlane(Random.insideUnitSphere, up) + up * Random.Range(0.2f, 1.2f));
         }
 
         public static void Flash(Vector3 pos, Color color, float size = 0.35f) => Spawn(pos, color, size, size * 0.4f, 0.08f);
@@ -98,13 +99,15 @@ namespace DungeonConveyor
             for (int i = 0; i <= steps; i++)
             {
                 var p = Vector3.Lerp(from, to, i / (float)steps);
-                if (i > 0 && i < steps) p += (Vector3)Random.insideUnitCircle * 0.08f;
+                if (i > 0 && i < steps) p += Random.insideUnitSphere * 0.08f;
                 Spawn(p, color, 0.12f, 0.04f, 0.14f);
             }
         }
 
         public static void Tick(float dt)
         {
+            var cam = Camera.main;
+            var facing = cam != null ? cam.transform.rotation : Quaternion.identity;
             for (int i = effects.Count - 1; i >= 0; i--)
             {
                 var e = effects[i];
@@ -116,9 +119,8 @@ namespace DungeonConveyor
                     continue;
                 }
                 float t = e.Age / e.Life;
-                float s = Mathf.Lerp(e.StartScale, e.EndScale, t);
-                e.Sr.transform.localScale = new Vector3(s, s * 0.6f, 1f);
-                e.Sr.transform.position += e.Velocity * dt;
+                e.Sr.transform.localScale = Vector3.one * Mathf.Lerp(e.StartScale, e.EndScale, t);
+                e.Sr.transform.SetPositionAndRotation(e.Sr.transform.position + e.Velocity * dt, facing);
                 var c = e.Color;
                 c.a *= 1f - t * t;
                 e.Sr.color = c;
@@ -127,7 +129,7 @@ namespace DungeonConveyor
 
         // ---------------------------------------------------------------- lines
 
-        public static LineRenderer NewLine(string name, Transform parent, Color color, float width, int order = Order)
+        public static LineRenderer NewLine(string name, Transform parent, Color color, float width)
         {
             var lr = new GameObject(name).AddComponent<LineRenderer>();
             lr.transform.SetParent(parent, false);
@@ -135,22 +137,29 @@ namespace DungeonConveyor
             lr.useWorldSpace = true;
             lr.startWidth = lr.endWidth = width;
             lr.startColor = lr.endColor = color;
-            lr.sortingOrder = order;
             lr.numCapVertices = 2;
             lr.enabled = false;
             return lr;
         }
 
-        /// <summary>Draws a circle of the given grid radius around a grid point, at an elevation, as a loop.</summary>
-        public static void Ring(LineRenderer lr, IsoGrid map, Vector2 gridCenter, float gridRadius, float level, int segments = 56)
+        /// <summary>
+        /// Draws a circle of the given radius (in cells) on the planet around a point on its surface, as a loop just
+        /// above the ground at that point's height.
+        /// </summary>
+        public static void Ring(LineRenderer lr, Vector3 center, float radius, int segments = 64)
         {
+            var up = center.normalized;
+            float height = center.magnitude + 0.06f;
+            var a = Vector3.Cross(up, Mathf.Abs(up.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            var b = Vector3.Cross(up, a);
+            float angle = radius / Mathf.Max(0.01f, height); // radians around the planet centre
             lr.loop = true;
             lr.positionCount = segments;
             for (int i = 0; i < segments; i++)
             {
-                float a = i * Mathf.PI * 2f / segments;
-                var p = gridCenter + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * gridRadius;
-                lr.SetPosition(i, map.GridToWorld(p, level));
+                float t = i * Mathf.PI * 2f / segments;
+                var dir = up * Mathf.Cos(angle) + (a * Mathf.Cos(t) + b * Mathf.Sin(t)) * Mathf.Sin(angle);
+                lr.SetPosition(i, dir * height);
             }
             lr.enabled = true;
         }

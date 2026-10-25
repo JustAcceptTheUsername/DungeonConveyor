@@ -129,10 +129,10 @@ GameObject:
   m_Component:
   - component: {fileID: 330585546}
   - component: {fileID: 330585545}
-  - component: {fileID: 330585544}
   - component: {fileID: 330585547}
   - component: {fileID: 330585548}
   - component: {fileID: 330585549}
+  - component: {fileID: 330585550}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -140,14 +140,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!81 &330585544
-AudioListener:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 330585543}
-  m_Enabled: 1
 --- !u!20 &330585545
 Camera:
   m_ObjectHideFlags: 0
@@ -271,11 +263,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.CameraController
   Map: {fileID: 336504971}
-  MinSize: 3
-  Margin: 2
+  MinAltitude: 5
+  MaxDistance: 6
   ZoomStep: 1.15
   ZoomSmoothing: 14
   DragThreshold: 6
+  CloseTilt: 38
+  KeySpeed: 70
+  FieldOfView: 40
+  SunAngles: {x: 28, y: 32, z: 0}
+  Ambient: {r: 0.3, g: 0.32, b: 0.42, a: 1}
 --- !u!114 &330585549
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -336,6 +333,20 @@ MonoBehaviour:
   m_BeforeTransparentBundles: []
   m_BeforeStackBundles: []
   m_AfterStackBundles: []
+--- !u!114 &330585550
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 330585543}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86c6556701af9e04380698b89f691b6e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: FMODUnity::FMODUnity.StudioListener
+  nonRigidbodyVelocity: 0
+  attenuationObject: {fileID: 0}
 --- !u!1 &336504970
 GameObject:
   m_ObjectHideFlags: 0
@@ -366,23 +377,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b0e7f0c4d4352d340ba1af199e0ab85b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.IsoGrid
-  Width: 50
-  Height: 50
+  FaceSize: 16
   Ground: {fileID: 1573557423}
   RoguelikeRun: 1
   CoreCount: 1
-  BaseDistance: {x: 3, y: 8}
   SpawnMinDistance: 20
   SpawnCount: {x: 1, y: 4}
-  RandomShape: 1
-  ShapeMinCoverage: 0.7
-  ShapeSolidCenter: 9
-  FillVoidWithRocks: 0
-  NoiseScale: 0.01
+  NoiseScale: 0.1
   Octaves: 4
   HeightCurve: 1.4
   BaseLevel: 1
-  BaseFlatten: {x: 3.5, y: 8}
+  BaseFlatten: {x: 4, y: 8}
   OrePatches: {x: 5, y: 8}
   OreMinBaseDistance: 6
 --- !u!156049354 &336504972

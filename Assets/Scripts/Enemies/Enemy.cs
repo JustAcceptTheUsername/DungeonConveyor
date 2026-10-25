@@ -4,8 +4,13 @@ using UnityEngine;
 namespace DungeonConveyor
 {
     /// <summary>
-    /// One enemy. Walks in along its spawn bridge, then follows the flow field cell by cell to the Core, where it
-    /// deals its damage and is gone. Moved by WaveManager; hurt and slowed by Combat.
+    /// One enemy. Rides a meteor down from space onto its landing site, then follows the flow field cell by cell over
+    /// the planet to the Core, where it deals its damage and is gone. Moved by WaveManager; hurt and slowed by Combat
+    /// (only once it has landed).
+    /// Traits (EnemyCatalog): fast ones run quicker, armored ones shrug off half of bullet and laser damage, fliers
+    /// cross walls and cliffs on their own flow field (and can't be hit by mines or flames), saboteurs head for the
+    /// nearest belt first and wreck a couple of tiles. Elite waves add a modifier: a shield to break first, splitting
+    /// in two on death, sabotage, speed or regeneration. Walking uphill slows ground enemies down.
     /// </summary>
     public class Enemy : MonoBehaviour
     {
@@ -14,14 +19,22 @@ namespace DungeonConveyor
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() => All.Clear();
 
+        /// <summary>Seconds a meteor takes from the edge of space to the ground.</summary>
+        public const float FallTime = 1.6f;
+        const float FallHeight = 22f;
+        const int FallingSteps = 200000;
+
         public EnemyCatalog.Entry Def { get; private set; }
         public float Health { get; private set; }
         public float MaxHealth { get; private set; }
         public bool Alive => Health > 0f;
-        /// <summary>Fractional grid position (cell (x, y) centred at (x, y)).</summary>
-        public Vector2 GridPos { get; private set; }
-        public Vector2Int Cell => Vector2Int.RoundToInt(GridPos);
-        /// <summary>Steps left to the Core; bridges count extra so enemies on the map are ahead of them.</summary>
+        /// <summary>Down on the planet (not still falling in its meteor): only then can it be hurt.</summary>
+        public bool Landed { get; private set; }
+        /// <summary>The cell it is on (the nearer end of the step it is taking).</summary>
+        public Vector2Int Cell => t < 0.5f ? fromCell : toCell;
+        /// <summary>Where it stands on the ground (without hovering).</summary>
+        public Vector3 GroundPos { get; private set; }
+        /// <summary>Steps left to the Core; enemies still falling count extra so landed ones are ahead of them.</summary>
         public int StepsToCore { get; private set; } = FlowField.Unreachable;
         /// <summary>Speed multiplier for this frame (slow fields lower it).</summary>
         public float SlowFactor = 1f;
@@ -29,18 +42,39 @@ namespace DungeonConveyor
         public bool IsBoss { get; private set; }
         public float CoreDamage { get; private set; }
         public int Bounty { get; private set; }
-        float speedScale = 1f, size = 1f;
+        public EnemyTrait Traits { get; private set; }
+        public EliteModifier Elite { get; private set; }
+        public bool IsFlying => (Traits & EnemyTrait.Flying) != 0 || Def.Hover > 0f;
+        public bool IsArmored => (Traits & EnemyTrait.Armored) != 0;
+        public bool IsSaboteur => (Traits & EnemyTrait.Saboteur) != 0 && BeltsToWreck > 0;
+        /// <summary>Belt tiles a saboteur still means to wreck before going for the Core.</summary>
+        public int BeltsToWreck { get; set; }
+        /// <summary>Shield (elite): soaks up damage before health does.</summary>
+        public float Shield { get; private set; }
+        public float MaxShield { get; private set; }
+        /// <summary>Splits into two smaller copies when killed (elite).</summary>
+        public bool Splits { get; private set; }
+        /// <summary>Burning when it died, and poisoned (for Combustion).</summary>
+        public bool WasBurning => burnTime > 0f;
+        public bool WasPoisoned => poisonTime > 0f;
+        public bool IsChilled => chillTime > 0f;
+        /// <summary>Set by Combat when it died to a missile or mortar (Chain Reaction).</summary>
+        public bool KilledByExplosion { get; set; }
+        float speedScale = 1f, size = 1f, regen;
+
+        public enum StepResult { Moving, ReachedCore, ReachedBelt }
 
         // Elemental effects (see Combat.ElementalHit).
         float burnDps, burnTime, chill, chillTime, poisonPerStack, poisonTime;
         int poisonStacks;
 
         IsoGrid map;
-        SpriteRenderer body, barBack, barFill;
-        readonly Queue<(Vector2Int cell, float level)> bridgePath = new Queue<(Vector2Int, float)>();
-        Vector2 from, to;
-        float fromLevel, toLevel, level, bob;
-        const int OnBridgeSteps = 100000;
+        Transform body, bar;
+        SpriteRenderer barBack, barFill, status, meteor;
+        float modelHeight = 0.5f;
+        Vector2Int fromCell, toCell;
+        float fromLevel, toLevel, t = 1f, stepLength = 0.001f, bob, fallTime;
+        Vector3 fallFrom, facing;
 
         static Sprite pixel;
         static Sprite Pixel
@@ -48,48 +82,82 @@ namespace DungeonConveyor
             get
             {
                 if (pixel != null) return pixel;
-                var t = new Texture2D(1, 1) { filterMode = FilterMode.Point };
-                t.SetPixel(0, 0, Color.white);
-                t.Apply();
-                return pixel = Sprite.Create(t, new Rect(0, 0, 1, 1), new Vector2(0f, 0.5f), 1f);
+                var tex = new Texture2D(1, 1) { filterMode = FilterMode.Point };
+                tex.SetPixel(0, 0, Color.white);
+                tex.Apply();
+                return pixel = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0f, 0.5f), 1f);
             }
         }
 
-        public static Enemy Spawn(EnemyCatalog.Entry def, float healthScale, IsoGrid map, IsoGrid.Bridge bridge, Transform parent, Material material)
+        public static Enemy Spawn(EnemyCatalog.Entry def, float healthScale, IsoGrid map, IsoGrid.SpawnSite site, Transform parent, Material material)
         {
             var go = new GameObject(def.Name);
             go.transform.SetParent(parent, false);
             var e = go.AddComponent<Enemy>();
-            e.Init(def, healthScale, map, bridge, material);
+            e.Init(def, healthScale, map, site, material);
             All.Add(e);
             return e;
         }
 
-        void Init(EnemyCatalog.Entry def, float healthScale, IsoGrid grid, IsoGrid.Bridge bridge, Material material)
+        void Init(EnemyCatalog.Entry def, float healthScale, IsoGrid grid, IsoGrid.SpawnSite site, Material material)
         {
             Def = def;
             map = grid;
             MaxHealth = Health = def.Health * healthScale;
             CoreDamage = def.CoreDamage;
             Bounty = def.Bounty;
+            Traits = def.Traits;
+            if ((Traits & EnemyTrait.Fast) != 0) speedScale = 1.35f;
+            BeltsToWreck = (Traits & EnemyTrait.Saboteur) != 0 ? 2 : 0;
             bob = Random.Range(0f, 6.28f);
 
-            body = NewSprite("Body", material);
-            barBack = NewSprite("HealthBack", material);
-            barFill = NewSprite("Health", material);
+            body = new GameObject("Body").transform;
+            body.SetParent(transform, false);
+            GameObject model;
+            if (def.Model != null) model = Instantiate(def.Model, body, false);
+            else
+            {
+                model = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                model.transform.SetParent(body, false);
+                model.transform.localPosition = Vector3.up * 0.5f;
+            }
+            PlanetArt.StripColliders(model);
+            model.transform.localScale *= def.Scale;
+            model.transform.localRotation = Quaternion.Euler(0f, EnemyCatalog.Instance != null ? EnemyCatalog.Instance.YawOffset : 0f, 0f);
+            var bounds = new Bounds(body.position, Vector3.zero);
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                bounds.Encapsulate(r.bounds);
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+            modelHeight = Mathf.Max(0.2f, bounds.max.y - body.position.y);
+
+            bar = new GameObject("Bar").transform;
+            bar.SetParent(transform, false);
+            barBack = NewSprite("HealthBack", bar, material);
+            barFill = NewSprite("Health", bar, material);
             barBack.sprite = barFill.sprite = Pixel;
             barBack.color = new Color(0f, 0f, 0f, 0.7f);
             barBack.enabled = barFill.enabled = false;
+            status = NewSprite("Status", transform, material);
+            status.sprite = Fx.Soft;
+            status.enabled = false;
 
-            // Walk the bridge from its far (off-screen) end back to the landing tile.
-            float bridgeLevel = map.BridgeLevel(bridge);
-            for (int i = bridge.Cells.Count - 2; i >= 0; i--) bridgePath.Enqueue((bridge.Cells[i], bridgeLevel));
-            bridgePath.Enqueue((bridge.Landing, map.HeightAt(bridge.Landing)));
-            var start = bridge.SpawnPoint;
-            GridPos = from = to = start;
-            level = fromLevel = toLevel = bridgeLevel;
-            StepsToCore = OnBridgeSteps + bridgePath.Count;
-            Place(Dir.Of(bridge.Landing - start));
+            // The meteor: a glowing ball falling from high above the landing site, slanting in from one side.
+            meteor = NewSprite("Meteor", transform, material);
+            meteor.sprite = Fx.Soft;
+            meteor.color = new Color(1f, 0.6f, 0.2f, 1f);
+            meteor.transform.localScale = Vector3.one * 1.3f;
+            fromCell = toCell = site.Landing;
+            fromLevel = toLevel = map.HeightAt(site.Landing);
+            var up = map.Up(site.Landing);
+            var side = Vector3.ProjectOnPlane(Random.onUnitSphere, up).normalized;
+            fallFrom = SurfacePoint(site.Landing, fromLevel) + (up + side * 0.6f).normalized * FallHeight;
+            facing = side;
+            body.gameObject.SetActive(false);
+            StepsToCore = FallingSteps;
+            GroundPos = fallFrom;
+            transform.position = fallFrom;
         }
 
         /// <summary>Turns this enemy into a boss: health, Core damage and bounty set, drawn bigger, walks slower.</summary>
@@ -101,8 +169,40 @@ namespace DungeonConveyor
             Bounty = bounty;
             size = scale;
             speedScale = speed;
-            body.transform.localScale = Vector3.one * size;
+            body.localScale = Vector3.one * size;
+            meteor.transform.localScale = Vector3.one * 1.3f * size;
         }
+
+        /// <summary>Gives this enemy an elite wave's modifier (and a bigger bounty).</summary>
+        public void MakeElite(EliteModifier m)
+        {
+            Elite = m;
+            Bounty = Mathf.CeilToInt(Bounty * 1.5f);
+            switch (m)
+            {
+                case EliteModifier.Shielded: MaxShield = Shield = MaxHealth * 0.6f; break;
+                case EliteModifier.Splitting: Splits = true; break;
+                case EliteModifier.Saboteurs: Traits |= EnemyTrait.Saboteur; BeltsToWreck = Mathf.Max(BeltsToWreck, 2); break;
+                case EliteModifier.Swift: speedScale *= 1.4f; break;
+                case EliteModifier.Regenerating: regen = 0.04f; break;
+            }
+            body.localScale = Vector3.one * size * 1.12f;
+        }
+
+        /// <summary>Skips the meteor: down on its cell right away (split-off copies).</summary>
+        public void LandNow()
+        {
+            if (Landed) return;
+            Landed = true;
+            meteor.enabled = false;
+            body.gameObject.SetActive(true);
+            StepsToCore = FlowField.Unreachable - 1;
+            t = 1f;
+            Place();
+        }
+
+        /// <summary>Damage multiplier against this enemy for an attack kind (armor halves bullets and lasers).</summary>
+        public float Resist(AttackKind kind) => IsArmored && (kind == AttackKind.Bullet || kind == AttackKind.Laser) ? 0.5f : 1f;
 
         // ---------------------------------------------------------------- elemental effects
 
@@ -133,65 +233,95 @@ namespace DungeonConveyor
             if (poisonTime > 0f) { poisonTime -= dt; dot += poisonPerStack * poisonStacks * dt; }
             else poisonStacks = 0;
             if (chillTime > 0f) { chillTime -= dt; SlowFactor = Mathf.Min(SlowFactor, 1f - chill); }
+            if (regen > 0f && Landed && Alive) Health = Mathf.Min(MaxHealth, Health + MaxHealth * regen * dt);
 
-            var tint = Color.white;
-            if (chillTime > 0f) tint = Color.Lerp(tint, new Color(0.55f, 0.85f, 1f), 0.6f);
-            if (poisonTime > 0f) tint = Color.Lerp(tint, new Color(0.6f, 1f, 0.35f), 0.5f);
-            if (burnTime > 0f) tint = Color.Lerp(tint, new Color(1f, 0.55f, 0.3f), 0.25f + 0.25f * Mathf.Abs(Mathf.Sin(Time.time * 12f)));
-            body.color = tint;
+            // A glow around the body shows what it suffers from (an elite shield shows as a blue halo).
+            var tint = Shield > 0f ? new Color(0.35f, 0.6f, 1f, 0.5f) : Color.clear;
+            if (chillTime > 0f) tint = new Color(0.55f, 0.85f, 1f, 0.55f);
+            if (poisonTime > 0f) tint = Color.Lerp(tint, new Color(0.6f, 1f, 0.35f, 0.55f), 0.5f);
+            if (burnTime > 0f) tint = Color.Lerp(tint, new Color(1f, 0.55f, 0.3f, 0.6f), 0.4f + 0.3f * Mathf.Abs(Mathf.Sin(Time.time * 12f)));
+            status.enabled = Landed && tint.a > 0f;
+            status.color = tint;
             return dot;
         }
 
-        SpriteRenderer NewSprite(string name, Material material)
+        SpriteRenderer NewSprite(string name, Transform parent, Material material)
         {
             var sr = new GameObject(name).AddComponent<SpriteRenderer>();
-            sr.transform.SetParent(transform, false);
+            sr.transform.SetParent(parent, false);
             if (material != null) sr.sharedMaterial = material;
             return sr;
         }
 
-        /// <summary>Moves toward the Core. Returns true when it has reached the Core this frame.</summary>
-        public bool Step(float dt, FlowField flow)
+        Vector3 SurfacePoint(Vector2Int c, float level) => map.Up(c) * map.RadiusAt(level);
+
+        /// <summary>
+        /// Falls, or moves along its flow field: saboteurs toward the nearest belt while they still mean to wreck one,
+        /// fliers over everything, the rest along the ground. Reports reaching the Core or a belt this frame.
+        /// </summary>
+        public StepResult Step(float dt, EnemyFlows flows)
         {
-            float move = Def.Speed * speedScale * SlowFactor * dt;
-            int facing = Dir.Of(Vector2Int.RoundToInt((to - from) * 2f));
-            while (move > 0f)
+            if (!Landed)
             {
-                var gap = to - GridPos;
-                float len = gap.magnitude;
-                if (len > move)
-                {
-                    GridPos += gap / len * move;
-                    break;
-                }
-                GridPos = to;
-                move -= len;
-                bool moving = ChooseNext(flow, out bool arrived);
-                if (arrived) return true;
-                if (!moving) break;
-                facing = Dir.Of(Vector2Int.RoundToInt(to - from));
+                Fall(dt);
+                return StepResult.Moving;
             }
 
-            float t = (from - to).sqrMagnitude > 0f ? 1f - (to - GridPos).magnitude / (to - from).magnitude : 1f;
-            level = Mathf.Lerp(fromLevel, toLevel, t);
-            Place(facing);
-            return false;
+            var flow = IsFlying ? flows.Air : flows.Ground;
+            bool hunting = IsSaboteur && flows.Belts != null && flows.Belts.Distance(toCell) != FlowField.Unreachable;
+            if (hunting) flow = flows.Belts;
+            // Uphill is slow going on foot.
+            float climb = !IsFlying && toLevel > fromLevel && t < 1f ? 0.65f : 1f;
+            float move = Def.Speed * speedScale * SlowFactor * climb * dt;
+            while (move > 0f)
+            {
+                float left = (1f - t) * stepLength;
+                if (left > move)
+                {
+                    t += move / stepLength;
+                    break;
+                }
+                move -= left;
+                t = 1f;
+                bool moving = ChooseNext(flow, out bool arrived);
+                if (arrived)
+                {
+                    Place();
+                    return hunting ? StepResult.ReachedBelt : StepResult.ReachedCore;
+                }
+                if (!moving) break;
+            }
+            Place();
+            return StepResult.Moving;
+        }
+
+        void Fall(float dt)
+        {
+            fallTime += dt;
+            float k = Mathf.Clamp01(fallTime / FallTime);
+            var ground = SurfacePoint(toCell, toLevel);
+            transform.position = Vector3.Lerp(fallFrom, ground, k * k);
+            PlanetArt.Billboard(meteor.transform);
+            if (Random.value < dt * 40f) Fx.Spawn(transform.position, new Color(1f, 0.45f, 0.15f, 0.7f), 0.5f * size, 0.1f, 0.5f);
+            if (k < 1f) return;
+
+            Landed = true;
+            meteor.enabled = false;
+            body.gameObject.SetActive(true);
+            Fx.Explosion(ground, 1.2f * size, new Color(1f, 0.55f, 0.2f, 0.9f));
+            Sfx.Play(Sfx.Lib.MeteorImpact, ground);
+            Sfx.Play(IsBoss ? Sfx.Lib.BossLand : Sfx.Lib.LandFor(Def), ground);
+            if (IsBoss) CameraController.Shake(0.5f);
+            t = 1f;
+            Place();
         }
 
         bool ChooseNext(FlowField flow, out bool arrived)
         {
             arrived = false;
-            var here = Vector2Int.RoundToInt(to);
-            from = to;
+            var here = toCell;
+            fromCell = toCell;
             fromLevel = toLevel;
-            if (bridgePath.Count > 0)
-            {
-                var (cell, lvl) = bridgePath.Dequeue();
-                to = cell;
-                toLevel = lvl;
-                StepsToCore = OnBridgeSteps + bridgePath.Count;
-                return true;
-            }
             StepsToCore = flow.Distance(here);
             if (StepsToCore == 0)
             {
@@ -199,48 +329,68 @@ namespace DungeonConveyor
                 return false;
             }
             if (!flow.Next(here, out var next)) return false; // walled in for now; try again next frame
-            to = next;
+            toCell = next;
             toLevel = map.HeightAt(next);
+            t = 0f;
+            stepLength = Mathf.Max(0.001f, Vector3.Distance(SurfacePoint(fromCell, fromLevel), SurfacePoint(toCell, toLevel)));
             return true;
         }
 
-        void Place(int facing)
+        void Place()
         {
-            var sprites = Def.Sprites;
-            if (sprites != null && sprites.Length == 4) body.sprite = sprites[Mathf.Clamp(facing, 0, 3)];
-            float hop = Def.Hover > 0f ? Mathf.Sin(Time.time * 6f + bob) * 0.05f : Mathf.Abs(Mathf.Sin(Time.time * 9f + bob)) * 0.03f;
-            transform.position = map.GridToWorld(GridPos, level) + Vector3.up * (ConveyorArt.SurfaceHeight + Def.Hover + hop);
+            var a = SurfacePoint(fromCell, fromLevel);
+            var b = SurfacePoint(toCell, toLevel);
+            GroundPos = Vector3.Slerp(a, b, t);
+            var up = GroundPos.normalized;
+            var heading = Vector3.ProjectOnPlane(b - a, up);
+            if (heading.sqrMagnitude > 1e-6f) facing = heading.normalized;
+            else facing = Vector3.ProjectOnPlane(facing, up).normalized;
 
-            int order = map.SortOrder(Cell) + 3;
-            body.sortingOrder = order;
-            barBack.sortingOrder = order;
-            barFill.sortingOrder = order + 1;
-            UpdateBar();
+            float hop = Def.Hover > 0f ? Mathf.Sin(Time.time * 6f + bob) * 0.05f : Mathf.Abs(Mathf.Sin(Time.time * 9f + bob)) * 0.03f;
+            transform.position = GroundPos + up * (ConveyorArt.SurfaceHeight + Def.Hover + hop);
+            if (facing.sqrMagnitude > 1e-6f) body.rotation = Quaternion.LookRotation(facing, up);
+
+            status.transform.position = transform.position + up * modelHeight * 0.5f * size;
+            status.transform.localScale = Vector3.one * modelHeight * 1.6f * size;
+            PlanetArt.Billboard(status.transform);
+            UpdateBar(up);
         }
 
-        void UpdateBar()
+        void UpdateBar(Vector3 up)
         {
             bool show = Health < MaxHealth;
             barBack.enabled = barFill.enabled = show;
             if (!show) return;
+            bar.position = transform.position + up * (modelHeight * size + 0.15f);
+            PlanetArt.Billboard(bar);
             float width = IsBoss ? 1.1f : 0.5f;
-            var top = (body.sprite != null ? body.sprite.bounds.max.y : 0.5f) * size;
-            var pos = new Vector3(-width * 0.5f, top + 0.08f, 0f);
+            var pos = new Vector3(-width * 0.5f, 0f, 0f);
             barBack.transform.localPosition = pos;
             barBack.transform.localScale = new Vector3(width, 0.06f, 1f);
             float f = Mathf.Clamp01(Health / MaxHealth);
-            barFill.transform.localPosition = pos + new Vector3(0f, 0f, -0.001f);
+            barFill.transform.localPosition = pos + new Vector3(0f, 0f, -0.002f);
             barFill.transform.localScale = new Vector3(width * f, 0.045f, 1f);
             barFill.color = Color.Lerp(new Color(1f, 0.2f, 0.15f), new Color(0.4f, 1f, 0.3f), f);
         }
 
         /// <summary>World point turrets aim at (middle of the body).</summary>
-        public Vector3 AimPoint => transform.position + Vector3.up * 0.2f * size;
+        public Vector3 AimPoint => transform.position + transform.position.normalized * modelHeight * 0.5f * size;
 
-        /// <summary>Deals damage; returns true if this killed it.</summary>
+        /// <summary>Deals damage (the shield takes it first); returns true if this killed it.</summary>
         public bool TakeDamage(float amount)
         {
             if (!Alive) return false;
+            if (Shield > 0f)
+            {
+                float soaked = Mathf.Min(Shield, amount);
+                Shield -= soaked;
+                amount -= soaked;
+                if (Shield <= 0f)
+                {
+                    Fx.Burst(AimPoint, new Color(0.4f, 0.7f, 1f, 0.9f), 0.6f * size);
+                    Sfx.Play(Sfx.Lib.ShieldBreak, AimPoint);
+                }
+            }
             Health -= amount;
             return !Alive;
         }

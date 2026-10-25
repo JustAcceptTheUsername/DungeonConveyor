@@ -3,7 +3,7 @@ using UnityEngine.InputSystem;
 
 namespace DungeonConveyor
 {
-    /// <summary>Outlines the cell under the cursor (hidden while the camera is being dragged).</summary>
+    /// <summary>Outlines the cell under the cursor (hidden while the camera is being turned).</summary>
     [RequireComponent(typeof(IsoGrid))]
     public class TileHover : MonoBehaviour
     {
@@ -29,7 +29,6 @@ namespace DungeonConveyor
             highlight.sprite = BlockArt.Highlight;
             var view = GetComponent<MapView>();
             if (view != null && view.SpriteMaterial != null) highlight.sharedMaterial = view.SpriteMaterial;
-            highlight.sortingOrder = short.MaxValue;
             highlight.enabled = false;
         }
 
@@ -42,14 +41,14 @@ namespace DungeonConveyor
                 Vector2 screen = mouse.position.ReadValue();
                 if (!HUD.IsPointerOverUI(screen))
                 {
-                    HasCell = map.Pick(cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f)), out var cell);
+                    HasCell = map.Pick(cam, screen, out var cell);
                     Cell = cell;
                 }
             }
 
             // While placing, the build ghost shows its own footprint instead.
             highlight.enabled = HasCell && (build == null || build.Placing == null);
-            if (HasCell) highlight.transform.position = map.SurfaceCenter(Cell);
+            if (HasCell) PlanetArt.LayFlat(highlight.transform, map, Cell, map.Heights[Cell.x, Cell.y], 0.035f);
         }
     }
 }

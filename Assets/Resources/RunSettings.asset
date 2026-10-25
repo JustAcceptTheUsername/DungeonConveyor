@@ -32,24 +32,28 @@ MonoBehaviour:
     HealthMultiplier: 0.75
     EnemyUnlockShift: -2
     TougherEnemyBias: 0
+    StartWave: 1
   - Name: Warden
     Description: The dungeon as intended. Enemies come at full strength, and new
       creatures appear on schedule.
     HealthMultiplier: 1
     EnemyUnlockShift: 0
     TougherEnemyBias: 0
+    StartWave: 1
   - Name: Overseer
     Description: For seasoned keepers. Enemies have 35% more health, and tougher
       creatures arrive 3 waves early and make up more of each wave.
     HealthMultiplier: 1.35
     EnemyUnlockShift: 3
     TougherEnemyBias: 0.5
+    StartWave: 11
   - Name: Abyssal
     Description: The deep wakes. Enemies have 80% more health, and the worst creatures
       crawl out 6 waves early and swarm every wave.
     HealthMultiplier: 1.8
     EnemyUnlockShift: 6
     TougherEnemyBias: 1
+    StartWave: 21
   StartingBuildings:
   - Conveyor
   - Miner

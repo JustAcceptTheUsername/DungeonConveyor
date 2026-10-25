@@ -25,6 +25,7 @@ MonoBehaviour:
     FirstWave: 1
     Weight: 4
     Hover: 0
+    Traits: 1
   - Id: CrystalSpider
     Name: Crystal Spider
     Model: {fileID: 2174832299153047374, guid: a827ecd0dc9427043ae1db5f9279eeac, type: 3}
@@ -36,6 +37,7 @@ MonoBehaviour:
     FirstWave: 2
     Weight: 3
     Hover: 0
+    Traits: 8
   - Id: Wasp
     Name: Wasp
     Model: {fileID: 895827133793382441, guid: 1dcb7811228554e409a8318b8767bd36, type: 3}
@@ -47,6 +49,7 @@ MonoBehaviour:
     FirstWave: 4
     Weight: 2
     Hover: 0.35
+    Traits: 4
   - Id: AcidSpitter
     Name: Acid Spitter
     Model: {fileID: 3610252699757839455, guid: 7e62bffd9e92c0742a0a9635227d9d6a, type: 3}
@@ -58,6 +61,7 @@ MonoBehaviour:
     FirstWave: 6
     Weight: 1.5
     Hover: 0
+    Traits: 8
   - Id: Brute
     Name: Brute
     Model: {fileID: 1129826029265878889, guid: b9163f07339881241aa510b5e1c15fb3, type: 3}
@@ -69,3 +73,4 @@ MonoBehaviour:
     FirstWave: 9
     Weight: 0.6
     Hover: 0
+    Traits: 2
