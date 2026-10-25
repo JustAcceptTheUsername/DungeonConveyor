@@ -8,7 +8,10 @@ namespace DungeonConveyor.EditorTools
 {
     /// <summary>
     /// Keeps Resources/EnemyCatalog.asset in sync with Assets/Models/Enemies: new models get an entry with default
-    /// stats, removed ones are dropped, edited stats are left alone.
+    /// stats, removed ones are dropped, edited stats are left alone. A reworked model can take over an old Id
+    /// (Replaces), a boss model goes on its kind's entry instead of becoming an enemy (BossModels), and clip assets
+    /// named &lt;Model&gt;_&lt;Action&gt;.asset (EnemyGait) next to a model are linked to its entry: Walk or Fly as the Gait
+    /// if it has none, the rest added to Clips (the boss model's go to BossGait and BossClips).
     /// </summary>
     [InitializeOnLoad]
     public class EnemyCatalogSync : AssetPostprocessor
@@ -27,10 +30,21 @@ namespace DungeonConveyor.EditorTools
         };
 
         // New model -> the existing catalog Id it replaces (the Id stays, so waves, saves and stats keep working).
-        // The replaced model's own file is then ignored, so it can stay in the folder without being re-linked.
+        // Only once the new model's file is in the folder: the replaced model's own file is then ignored, so it can stay
+        // there for rollback without being re-linked. Until then the old model stays linked.
         static readonly Dictionary<string, string> Replaces = new Dictionary<string, string>
         {
             { "PebbleSkitterer", "Crawler" },
+            { "OreEater", "CrystalSpider" },
+            { "RockBat", "Wasp" },
+            { "MagmaSpitter", "AcidSpitter" },
+            { "OreGolem", "Brute" },
+        };
+
+        // Boss model -> the catalog Id it is the boss of (Entry.BossModel); never an enemy of its own.
+        static readonly Dictionary<string, string> BossModels = new Dictionary<string, string>
+        {
+            { "OreGolem_Boss", "Brute" },
         };
 
         static EnemyCatalogSync() => EditorApplication.delayCall += Sync;
@@ -59,20 +73,45 @@ namespace DungeonConveyor.EditorTools
                 AssetDatabase.CreateAsset(catalog, CatalogPath);
             }
 
-            var models = new Dictionary<string, GameObject>();
+            // Model files and clip assets directly in the folder (sub-folders are free for non-enemy models).
+            var files = new List<(string name, string path, string ext, GameObject go)>();
+            var present = new HashSet<string>();
+            var gaits = new List<EnemyGait>();
             foreach (var guid in AssetDatabase.FindAssets("", new[] { ModelsFolder }))
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
+                if (Path.GetDirectoryName(path).Replace('\\', '/') != ModelsFolder) continue;
                 var ext = Path.GetExtension(path).ToLowerInvariant();
+                if (ext == ".asset")
+                {
+                    var gait = AssetDatabase.LoadAssetAtPath<EnemyGait>(path);
+                    if (gait != null) gaits.Add(gait);
+                    continue;
+                }
                 if (ext != ".glb" && ext != ".gltf" && ext != ".obj" && ext != ".fbx") continue;
                 var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
                 if (go == null) continue;
-                var id = Path.GetFileNameWithoutExtension(path);
-                // Only the folder itself holds enemies (sub-folders are free for non-enemy models).
-                if (Path.GetDirectoryName(path).Replace('\\', '/') != ModelsFolder) continue;
-                if (Replaces.ContainsValue(id)) continue;
-                if (Replaces.TryGetValue(id, out var replaced)) id = replaced;
-                if (!models.ContainsKey(id) || ext == ".glb" || ext == ".gltf") models[id] = ModelPrefabs.Prefer(path, go);
+                var name = Path.GetFileNameWithoutExtension(path);
+                files.Add((name, path, ext, go));
+                present.Add(name);
+            }
+
+            var models = new Dictionary<string, GameObject>();
+            var modelFile = new Dictionary<string, string>(); // catalog Id -> its model's file name (for the clips)
+            var bosses = new Dictionary<string, (GameObject model, string file)>();
+            foreach (var (name, path, ext, go) in files)
+            {
+                bool better = ext == ".glb" || ext == ".gltf";
+                if (BossModels.TryGetValue(name, out var bossOf))
+                {
+                    if (!bosses.ContainsKey(bossOf) || better) bosses[bossOf] = (ModelPrefabs.Prefer(path, go), name);
+                    continue;
+                }
+                if (IsReplaced(name, present)) continue;
+                var id = Replaces.TryGetValue(name, out var replaced) ? replaced : name;
+                if (models.ContainsKey(id) && !better) continue;
+                models[id] = ModelPrefabs.Prefer(path, go);
+                modelFile[id] = name;
             }
 
             bool changed = catalog.Entries.RemoveAll(e => e == null || !models.ContainsKey(e.Id)) > 0;
@@ -82,7 +121,7 @@ namespace DungeonConveyor.EditorTools
                 if (entry != null)
                 {
                     // A replacement model always wins over whatever the entry pointed at before.
-                    if (entry.Model == null || (Replaces.ContainsValue(entry.Id) && entry.Model != pair.Value))
+                    if (entry.Model == null || (IsReplaced(entry.Id, present) && entry.Model != pair.Value))
                     {
                         entry.Model = pair.Value;
                         changed = true;
@@ -107,11 +146,58 @@ namespace DungeonConveyor.EditorTools
                 changed = true;
             }
 
+            foreach (var entry in catalog.Entries)
+            {
+                if (modelFile.TryGetValue(entry.Id, out var file)) changed |= LinkClips(file, gaits, ref entry.Gait, ref entry.Clips);
+                if (!bosses.TryGetValue(entry.Id, out var boss)) continue;
+                if (entry.BossModel != boss.model)
+                {
+                    entry.BossModel = boss.model;
+                    changed = true;
+                }
+                changed |= LinkClips(boss.file, gaits, ref entry.BossGait, ref entry.BossClips);
+            }
+
             if (!changed) return;
             catalog.Entries.Sort((a, b) => a.FirstWave.CompareTo(b.FirstWave));
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();
             Debug.Log($"Enemy catalog synced: {catalog.Entries.Count} enemies ({CatalogPath}).");
+        }
+
+        /// <summary>id was taken over by a new model whose file is in the folder.</summary>
+        static bool IsReplaced(string id, HashSet<string> present)
+        {
+            foreach (var pair in Replaces)
+                if (pair.Value == id && present.Contains(pair.Key)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Links the clip assets &lt;file&gt;_&lt;Action&gt; (an Action without '_'): Walk or Fly becomes the gait if there is
+        /// none, the others are added to clips (a Fly too, so it is the loop on a flier). Never unlinks or replaces what is
+        /// set. Returns whether anything changed.
+        /// </summary>
+        static bool LinkClips(string file, List<EnemyGait> gaits, ref EnemyGait gait, ref EnemyGait[] clips)
+        {
+            bool changed = false;
+            var list = new List<EnemyGait>(clips ?? new EnemyGait[0]);
+            foreach (var g in gaits)
+            {
+                if (!g.name.StartsWith(file + "_")) continue;
+                var action = g.name.Substring(file.Length + 1);
+                if (action.Length == 0 || action.Contains("_")) continue; // OreGolem_Boss_Slam is not OreGolem's
+                if ((action == "Walk" || action == "Fly") && gait == null)
+                {
+                    gait = g;
+                    changed = true;
+                }
+                if (g == gait || list.Contains(g)) continue;
+                list.Add(g);
+                changed = true;
+            }
+            if (changed) clips = list.ToArray();
+            return changed;
         }
     }
 }
