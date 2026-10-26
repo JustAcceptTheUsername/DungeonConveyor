@@ -162,3 +162,32 @@ colours, so any role can be recoloured.
 - **New enemy:** export it (the sidecar `<Id>_palette.json` lands next to the glb), copy the glb in, then
   `Dungeon/Import Enemy Palettes...` on the sidecar folder (creates/updates `<Id>_Palette.asset`, keeps edited
   colours, then runs the catalog sync).
+
+## 10. Polish pass (2026-10-26, on top of §1–§9)
+Alex reviewed every change below. The Pebble Skitterer is the benchmark; it got colour fixes only.
+
+| Commit | What |
+|---|---|
+| `a590f80` | Bright health bars drawn above the body (camera-up offset), real white hit flash, hatch shell capped for big enemies + additive crack flash (new `Resources/Shaders/FxAdditive.shader`). |
+| `aa153e4` | Poses step on key crossings (8–24/s) instead of a fixed 12 fps; 50% in-between on clip start/stop; walk resumes at its most neutral key; Chew finishes its cycle; `TravelCurve` (uneven travel, e.g. a hop surge); loop events through `Enemy.OnLoopEvent` (footstep hook, throttled); Ore-eater crystals grow on each Bite; four plate thresholds 0.8/0.6/0.4/0.2; boss stays alive until its plates land; eased facing for walkers; lower bat bank. |
+| `d32c94b` | Impact hold for slammers/divers (2–3 pose steps + hostile burst before they leave); lob target ring on the belt. |
+| `013eec1`, `e51c3f1`, `aca13f6`, `2f8c629` | Knob values; polish models + clips; glow emission refit in game; health-bar fill draws over its back. |
+| `1930de2` | Boss plate seams thinner and dimmer at rest (`Rig.SeamRestGlow`), still flaring before a break. |
+| `8595106` | Final models with role materials and neutral bands: new **Magma Spitter = volcano-back rock frog** (toad crawl step-step-hop with `Step`/`Land` events, lob unchanged), **Ore-eater = iron bulldog jaw** (bigger head, bulldog legs + paws, waddle walk). |
+| `f42a32a` | Element palettes (§9). |
+| `b8d828c` | Magma Spitter scale 1.1 → 0.95 (the frog is ~0.5 tall, ~55 px at default zoom). |
+
+**Attack timings are unchanged** (the same dwell knobs as §5). The motion was re-keyed so it reads from the near top-down camera:
+sideways jaw grind, two-arm overhead slam, bat dive wind-up, lob target ring.
+
+**Fixed along the way:** the rig used to dim every glow it touched (seams, Spitter Core) to ~0.35 of the material, which is why the Core "went redder, not hotter". The seam knobs were re-expressed (`SeamRestGlow` 0.1, `SeamFlare` 6.9) to keep the approved look. The Spitter Core now brightens during the Lob as designed.
+
+**Sound hooks (for §6):** `Enemy.OnLoopEvent` now fires the Spitter's `Step` (each foot plant) and `Land` (hop landing).
+Other walks get footsteps by adding `Step` events to their clip JSON/asset. Chew `Bite`, Lob `Launch`, Slam/Dive `Impact`
+and Enrage `Roar` fire through the rig as before.
+
+**Open / for Dido:**
+- The bloom threshold card on Trello: raising it from 0.85 to ~1.1 lets the stone bands read warm again (they're cool steel-teal now), and lets the colour compensation go (`Palette.Compensate` off + `--raw-colors` export).
+- Element colours are placeholders, and recoloured enemies leave the SRP Batcher (GPU cost not measured).
+- Elements barely change the Golem (only its small gold shards are Accent); the hostile pink glow is deliberately never recoloured.
+- Foot slide: Skitterer 4%, Ore-eater ~0, frog 0 on planted keys (a pose held for one frame can drift up to 0.13 on the hop launch).
