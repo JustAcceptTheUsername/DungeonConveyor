@@ -18,7 +18,9 @@ MonoBehaviour:
     InkColor: {r: 0.106, g: 0.063, b: 0.125, a: 1}
     InkWidth: 0.018
     InkMinPixels: 1.5
-    FlashSeconds: 0.065
+    FlashSeconds: 0.08
+    FlashStrength: 1
+    FlashEmission: 1
     ChipsPerHit: 3
     CrackAt: {x: 0.66, y: 0.33}
     CrackScale: 3.5
@@ -30,9 +32,16 @@ MonoBehaviour:
     ScaleJitter: 0.06
     BobJitter: 0.15
     BarHeight: 0.09
+    BarFull: {r: 0.36, g: 1, b: 0.36, a: 1}
+    BarHalf: {r: 1, g: 0.9, b: 0.22, a: 1}
+    BarLow: {r: 1, g: 0.27, b: 0.2, a: 1}
+    BarMargin: 0.1
   RigAnimation: 1
   Rig:
     PoseFps: 12
+    PoseOnKeys: 1
+    PoseFpsMax: 24
+    PoseFpsMin: 8
     Interpolate: 1
     StrideScale: 1
     BodyBounce: 1.8
@@ -40,6 +49,8 @@ MonoBehaviour:
     LegSwing: 1.25
     MeteorShell: {fileID: 480147433252618104, guid: 019f3a32bfee38348b8969e0c63fe4d1, type: 3}
     ShellSize: 1.5
+    ShellMaxHeight: 1.4
+    CrackFlashMax: 0.6
     CrackAt: 0.15
     PopSeconds: 0.35
     HatchHold: 0.35
@@ -52,9 +63,15 @@ MonoBehaviour:
     ActionAmplitude: 1
     FlapRate: 1
     FlyTurnResponse: 6
-    BankMax: 22
-    BankPerTurn: 0.12
+    BankMax: 12
+    BankPerTurn: 0.06
     BankResponse: 7
+    WalkTurnResponse: 10
+    LoopEventsPerSecond: 40
+    LandDust: 1
+    CoreGlowMax: 1.8
+    CrystalGrowStep: 0.05
+    CrystalGrowMax: 1.3
     ChewDwell: 0.5
     LobDwell: 0.6
     LobRange: 2
@@ -62,12 +79,19 @@ MonoBehaviour:
     LobArc: 0.45
     LobMuzzle: {x: 0, y: 0.35, z: 0.25}
     SlamDwell: 0.6
+    ImpactHoldSteps: 3
+    ImpactShrinkSeconds: 0.15
+    LobRing: 1
+    LobRingRadius: 0.42
     PlateBreakAt:
-    - 0.75
-    - 0.5
-    - 0.25
+    - 0.8
+    - 0.6
+    - 0.4
+    - 0.2
     PlateSeconds: 1
     PlateImpulse: 1.6
+    SeamWarnBand: 0.08
+    SeamFlare: 3
     EnrageHold: 1
   Entries:
   - Id: Crawler
