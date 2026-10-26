@@ -51,6 +51,11 @@ namespace DungeonConveyor
             public EnemyGait BossGait;
             [Tooltip("The boss model's own clips. Empty: Clips.")]
             public EnemyGait[] BossClips;
+            [Tooltip("Colours by role (EnemyPalette, <Model>_Palette next to the model): recoloured per element through " +
+                     "Enemy.SetElement. Empty: the model's own colours, no element variants.")]
+            public EnemyPalette Palette;
+            [Tooltip("The boss model's palette. Empty: Palette.")]
+            public EnemyPalette BossPalette;
 
             [System.NonSerialized] public Sprite[] Sprites; // per Dir, rendered at runtime by GameArt
         }
@@ -218,13 +223,28 @@ namespace DungeonConveyor
             public float PlateImpulse = 1.6f;
             [Tooltip("A plate's Seam glow flares as health comes within this much (health fraction) of its threshold.")]
             public float SeamWarnBand = 0.08f;
-            [Tooltip("Seam glow at the threshold, times its own.")]
-            public float SeamFlare = 3f;
-            [Tooltip("Resting seam glow (plate far from its threshold), times its own.")]
-            public float SeamRestGlow = 0.45f;
+            [Tooltip("Seam glow at the threshold, times its own (6.9 = the look approved through the old colour path, " +
+                     "which turned the 3 it had then into about 6.9).")]
+            public float SeamFlare = 6.9f;
+            [Tooltip("Resting seam glow (plate far from its threshold), times its own (0.1 = the approved look; it read " +
+                     "0.45 through the old colour path, which darkened it).")]
+            public float SeamRestGlow = 0.1f;
             [Tooltip("Most seconds the enemy stands for its Enrage clip when a plate breaks: it stands for the whole clip, " +
                      "sped up to fit (0 = keeps walking while the clip plays).")]
             public float EnrageHold = 1f;
+        }
+
+        /// <summary>Enemy colours by role and the element variants (EnemyPalette, EnemyPaint).</summary>
+        [System.Serializable]
+        public class PaletteSettings
+        {
+            [Tooltip("Bloom compensation on palette colours (the exporter's export_color, ported): on while the bloom " +
+                     "threshold lifts small dark enemies. Turn it off once the bloom is raised (~1.1) and the glbs are " +
+                     "exported with --raw-colors.")]
+            public bool Compensate = true;
+            [Tooltip("Element variants shared by every enemy: per element, the roles it recolours (authored sRGB). An " +
+                     "enemy's own EnemyPalette.Elements win role by role. PLACEHOLDER colours, for Dido to tune.")]
+            public ElementColors[] Elements = EnemyPalette.DefaultElements();
         }
 
         [Tooltip("Extra yaw if the models don't face +Z.")]
@@ -237,6 +257,7 @@ namespace DungeonConveyor
                  "the meteor shell, crumbling into gravel. Off = they glide as one piece like the old models.")]
         public bool RigAnimation = true;
         public RigSettings Rig = new RigSettings();
+        public PaletteSettings Palette = new PaletteSettings();
         public List<Entry> Entries = new List<Entry>();
 
         static EnemyCatalog instance;

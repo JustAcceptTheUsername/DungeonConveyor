@@ -28,6 +28,7 @@ namespace DungeonConveyor
         {
             All.Clear();
             OnLoopEvent = null;
+            SpawnElement = null;
             loopTokens = loopTokenTime = 0f;
         }
 
@@ -101,6 +102,10 @@ namespace DungeonConveyor
 
         // Rigid-part animation (null for one-piece models or when EnemyCatalog.RigAnimation is off).
         EnemyRig rig;
+        // The model's property blocks: palette colours per role (an element variant) and the rig's glows.
+        EnemyPaint paint;
+        EnemyPalette palette;
+        EnemyElement element;
         GameObject model;
         Material spriteMaterial;
         Vector3 lastGround, flyFacing; // flyFacing: a flier's eased heading
@@ -176,7 +181,8 @@ namespace DungeonConveyor
                 jitter = 1f + Random.Range(-cfg.ScaleJitter, cfg.ScaleJitter);
                 bobSpeed = 1f + Random.Range(-cfg.BobJitter, cfg.BobJitter);
             }
-            BuildModel(def.Model, def.Gait, def.Clips);
+            if (SpawnElement.HasValue) element = SpawnElement.Value;
+            BuildModel(def.Model, def.Gait, def.Clips, def.Palette);
             enabled = false; // Update only runs while crumbling
 
             bar = new GameObject("Bar").transform;
@@ -214,7 +220,7 @@ namespace DungeonConveyor
         /// The model under body, with its rig and feedback layer (replacing any earlier ones): prefab (a sphere if null),
         /// gait = the loop, clips = the rest (EnemyCatalog.Entry.Clips).
         /// </summary>
-        void BuildModel(GameObject prefab, EnemyGait gait, EnemyGait[] clips)
+        void BuildModel(GameObject prefab, EnemyGait gait, EnemyGait[] clips, EnemyPalette colours)
         {
             if (model != null)
             {
@@ -244,7 +250,11 @@ namespace DungeonConveyor
             }
             modelHeight = Mathf.Max(0.2f, bounds.max.y - body.position.y);
             modelRadius = 0.5f * Mathf.Max(bounds.size.x, bounds.size.z);
-            if (EnemyRig.On) rig = EnemyRig.Create(model, gait, clips, IsFlying); // before the look adds its own meshes
+            // Both before the look adds its own meshes (EnemyLook paints those through its own material).
+            paint = new EnemyPaint(model);
+            palette = colours;
+            ApplyPalette();
+            if (EnemyRig.On) rig = EnemyRig.Create(model, gait, clips, IsFlying, paint);
             chewClip = lobClip = slamClip = enrageClip = -1;
             if (rig != null)
             {
@@ -270,7 +280,8 @@ namespace DungeonConveyor
             bool own = Def.BossModel != null && !Landed;
             if (own)
                 BuildModel(Def.BossModel, Def.BossGait != null ? Def.BossGait : Def.Gait,
-                    Def.BossClips != null && Def.BossClips.Length > 0 ? Def.BossClips : Def.Clips);
+                    Def.BossClips != null && Def.BossClips.Length > 0 ? Def.BossClips : Def.Clips,
+                    Def.BossPalette != null ? Def.BossPalette : Def.Palette);
             IsBoss = true;
             MaxHealth = Health = health;
             CoreDamage = coreDamage;
@@ -280,6 +291,44 @@ namespace DungeonConveyor
             body.localScale = Vector3.one * size;
             meteor.transform.localScale = Vector3.one * 1.3f * scale;
         }
+
+        /// <summary>The element variant it shows (None = the authored colours).</summary>
+        public EnemyElement ElementVariant => element;
+        /// <summary>The palette its model is painted with (EnemyCatalog.Entry.Palette, or BossPalette), or null.</summary>
+        public EnemyPalette Palette => palette;
+        /// <summary>Role slots the palette paints right now (0 = exactly the imported look, no property blocks).</summary>
+        public int PaintedSlots => paint != null ? paint.PaintedSlots : 0;
+
+        /// <summary>
+        /// Recolours it as an element variant (EnemyCatalog.Palette.Elements, or its palette's own Elements), role by
+        /// role through property blocks; None = its authored colours. Any time, also mid-walk; no allocation.
+        /// </summary>
+        public void SetElement(EnemyElement e)
+        {
+            element = e;
+            ApplyPalette();
+        }
+
+        public void SetElement(Element e) => SetElement(EnemyPalette.ElementOf(e));
+
+        /// <summary>Re-applies the palette (after a palette or EnemyCatalog.Palette change).</summary>
+        public void ApplyPalette()
+        {
+            if (paint == null) return;
+            var cat = EnemyCatalog.Instance;
+            var cfg = cat != null ? cat.Palette : null;
+            paint.Apply(palette, element, cfg == null || cfg.Compensate, cfg != null ? cfg.Elements : null);
+        }
+
+        /// <summary>Debug/eval: every enemy alive (null: and every one spawned from now on, until set back) as e.</summary>
+        public static void SetElementAll(EnemyElement e, bool andNewOnes = false)
+        {
+            for (int i = 0; i < All.Count; i++) All[i].SetElement(e);
+            SpawnElement = andNewOnes ? e : (EnemyElement?)null;
+        }
+
+        /// <summary>Debug: the element new enemies spawn with (null = None).</summary>
+        public static EnemyElement? SpawnElement;
 
         /// <summary>Gives this enemy an elite wave's modifier (and a bigger bounty).</summary>
         public void MakeElite(EliteModifier m)

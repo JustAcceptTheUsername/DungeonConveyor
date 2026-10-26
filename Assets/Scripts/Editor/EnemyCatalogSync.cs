@@ -11,7 +11,8 @@ namespace DungeonConveyor.EditorTools
     /// stats, removed ones are dropped, edited stats are left alone. A reworked model can take over an old Id
     /// (Replaces), a boss model goes on its kind's entry instead of becoming an enemy (BossModels), and clip assets
     /// named &lt;Model&gt;_&lt;Action&gt;.asset (EnemyGait) next to a model are linked to its entry: Walk or Fly as the Gait
-    /// if it has none, the rest added to Clips (the boss model's go to BossGait and BossClips).
+    /// if it has none, the rest added to Clips (the boss model's go to BossGait and BossClips). A palette
+    /// &lt;Model&gt;_Palette.asset (EnemyPalette, from EnemyPaletteSync) goes to Palette (BossPalette for the boss model).
     /// </summary>
     [InitializeOnLoad]
     public class EnemyCatalogSync : AssetPostprocessor
@@ -148,7 +149,11 @@ namespace DungeonConveyor.EditorTools
 
             foreach (var entry in catalog.Entries)
             {
-                if (modelFile.TryGetValue(entry.Id, out var file)) changed |= LinkClips(file, gaits, ref entry.Gait, ref entry.Clips);
+                if (modelFile.TryGetValue(entry.Id, out var file))
+                {
+                    changed |= LinkClips(file, gaits, ref entry.Gait, ref entry.Clips);
+                    changed |= LinkPalette(file, ref entry.Palette);
+                }
                 if (!bosses.TryGetValue(entry.Id, out var boss)) continue;
                 if (entry.BossModel != boss.model)
                 {
@@ -156,6 +161,7 @@ namespace DungeonConveyor.EditorTools
                     changed = true;
                 }
                 changed |= LinkClips(boss.file, gaits, ref entry.BossGait, ref entry.BossClips);
+                changed |= LinkPalette(boss.file, ref entry.BossPalette);
             }
 
             if (!changed) return;
@@ -163,6 +169,14 @@ namespace DungeonConveyor.EditorTools
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();
             Debug.Log($"Enemy catalog synced: {catalog.Entries.Count} enemies ({CatalogPath}).");
+        }
+
+        /// <summary>Links &lt;file&gt;_Palette.asset (EnemyPaletteSync) if nothing is set. Returns whether it changed.</summary>
+        static bool LinkPalette(string file, ref EnemyPalette palette)
+        {
+            if (palette != null) return false;
+            palette = AssetDatabase.LoadAssetAtPath<EnemyPalette>(ModelsFolder + "/" + file + "_Palette.asset");
+            return palette != null;
         }
 
         /// <summary>id was taken over by a new model whose file is in the folder.</summary>

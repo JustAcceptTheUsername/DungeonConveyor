@@ -67,14 +67,11 @@ namespace DungeonConveyor
         // A glowing Core part that swells by scale (the spitter's Lob) glows brighter with it.
         readonly int coreIndex = -1, coreSlot;
         readonly Renderer coreRenderer;
-        readonly int coreColorId;
-        readonly Color coreEmission;
-        MaterialPropertyBlock coreBlock;
+        int corePaint = -1;
         bool coreBright;
         // The glow slots on the Core's Body (a spitter's cracks) pulse with the Core's swell.
         readonly Renderer[] swellRenderers;
-        readonly int[] swellSlots, swellIds;
-        readonly Color[] swellEmission;
+        readonly int[] swellSlots, swellPaint;
         float phase, nextPose, lastStep = -1f, popStart = -1f, hitPose;
         int playing = -1, playSerial;
         float playStart, playRate = 1f, playPrev, playPhase;
@@ -105,10 +102,8 @@ namespace DungeonConveyor
 
         // Plate seams (a Seam* glow part on each Plate_*) flare as the plate's threshold comes near.
         readonly Renderer[] seamRenderer;
-        readonly int[] seamSlot, seamColorId;
-        readonly Color[] seamEmission;
+        readonly int[] seamSlot, seamPaint;
         readonly float[] plateAt;
-        MaterialPropertyBlock seamBlock;
         float health01 = 1f, seamShown = 1f, seamRest = 1f;
         int seamPlate = -1;
 
@@ -149,16 +144,21 @@ namespace DungeonConveyor
         /// The rig for model if it has rigid parts (any child node with a mesh besides the root), else null. gait: the
         /// loop; clips: the other clips; flier: plays its loop on time (a clip called Fly wins over gait).
         /// </summary>
-        public static EnemyRig Create(GameObject model, EnemyGait gait, EnemyGait[] clips = null, bool flier = false)
+        public static EnemyRig Create(GameObject model, EnemyGait gait, EnemyGait[] clips = null, bool flier = false,
+            EnemyPaint paint = null)
         {
             var filters = model.GetComponentsInChildren<MeshFilter>(true);
             if (filters.Length < 2) return null; // one merged mesh: nothing to animate
-            return new EnemyRig(model.transform, filters, gait, clips, flier);
+            return new EnemyRig(model.transform, filters, gait, clips, flier, paint ?? new EnemyPaint(model));
         }
 
-        EnemyRig(Transform model, MeshFilter[] filters, EnemyGait gait, EnemyGait[] clips, bool flier)
+        /// <summary>The model's property blocks (the palette colours and the glows driven here share them).</summary>
+        public EnemyPaint Paint { get; }
+
+        EnemyRig(Transform model, MeshFilter[] filters, EnemyGait gait, EnemyGait[] clips, bool flier, EnemyPaint paint)
         {
             cfg = Settings;
+            Paint = paint;
             this.model = model;
             this.flier = flier;
             // The pop scales the node that holds all parts (the glb's root node), so the model's own scale stays put.
@@ -246,8 +246,7 @@ namespace DungeonConveyor
                     coreIndex = i;
                     coreSlot = m;
                     coreRenderer = r;
-                    coreColorId = id;
-                    coreEmission = mats[m].GetColor(id);
+                    corePaint = paint.Index(r, m);
                     break;
                 }
             }
@@ -264,15 +263,12 @@ namespace DungeonConveyor
             }
             swellRenderers = new Renderer[swell.Count];
             swellSlots = new int[swell.Count];
-            swellIds = new int[swell.Count];
-            swellEmission = new Color[swell.Count];
+            swellPaint = new int[swell.Count];
             for (int i = 0; i < swell.Count; i++)
             {
-                var mat = bodyRenderer.sharedMaterials[swell[i]];
                 swellRenderers[i] = bodyRenderer;
                 swellSlots[i] = swell[i];
-                swellIds[i] = mat.HasProperty(EmissiveFactor) ? EmissiveFactor : EmissionColor;
-                swellEmission[i] = mat.GetColor(swellIds[i]);
+                swellPaint[i] = paint.Index(bodyRenderer, swell[i]);
             }
 
             phase = Random.value;
@@ -330,8 +326,7 @@ namespace DungeonConveyor
             // so it is not a piece of its own in the crumble.
             seamRenderer = new Renderer[p];
             seamSlot = new int[p];
-            seamColorId = new int[p];
-            seamEmission = new Color[p];
+            seamPaint = new int[p];
             plateAt = new float[p];
             for (int i = 0; i < p; i++)
             {
@@ -356,8 +351,7 @@ namespace DungeonConveyor
                 if (id < 0) continue;
                 seamRenderer[i] = sr;
                 seamSlot[i] = slot;
-                seamColorId[i] = id;
-                seamEmission[i] = mats[slot].GetColor(id);
+                seamPaint[i] = paint.Index(sr, slot);
             }
             var at = cfg.PlateBreakAt;
             for (int i = 0; i < p; i++) plateAt[i] = PlateThreshold(i, p, at);
@@ -781,17 +775,8 @@ namespace DungeonConveyor
         /// <summary>Seam i's glow at k times its material's own (k = 1 clears the block).</summary>
         void SetSeam(int i, float k)
         {
-            var r = seamRenderer[i];
-            if (r == null) return;
-            if (k == 1f)
-            {
-                r.SetPropertyBlock(null, seamSlot[i]);
-                return;
-            }
-            if (seamBlock == null) seamBlock = new MaterialPropertyBlock();
-            var e = seamEmission[i];
-            seamBlock.SetColor(seamColorId[i], new Color(e.r * k, e.g * k, e.b * k, e.a));
-            r.SetPropertyBlock(seamBlock, seamSlot[i]);
+            if (seamRenderer[i] == null) return;
+            Paint.SetGlow(seamPaint[i], k);
         }
 
         static float Or(float value, float fallback) => value >= 0f ? value : fallback;
@@ -818,25 +803,16 @@ namespace DungeonConveyor
             coreBright = bright;
             if (!bright)
             {
-                coreRenderer.SetPropertyBlock(null, coreSlot);
-                for (int i = 0; i < swellRenderers.Length; i++) swellRenderers[i].SetPropertyBlock(null, swellSlots[i]);
+                Paint.SetGlow(corePaint, 1f);
+                for (int i = 0; i < swellPaint.Length; i++) Paint.SetGlow(swellPaint[i], 1f);
                 return;
             }
-            if (coreBlock == null) coreBlock = new MaterialPropertyBlock();
             // Linear in the swell and capped (scale squared clipped the orange toward yellow at the Lob hold).
             float k = Mathf.Clamp(f, 0.2f, Mathf.Max(1f, cfg.CoreGlowMax));
-            coreBlock.SetColor(coreColorId, new Color(coreEmission.r * k, coreEmission.g * k, coreEmission.b * k, coreEmission.a));
-            coreRenderer.SetPropertyBlock(coreBlock, coreSlot);
+            Paint.SetGlow(corePaint, k);
             // The body's cracks pulse with it (a little stronger, so the swell reads past the core itself).
             float kb = Mathf.Clamp(1f + (k - 1f) * 1.5f, 0.2f, 1f + (Mathf.Max(1f, cfg.CoreGlowMax) - 1f) * 1.5f);
-            for (int i = 0; i < swellRenderers.Length; i++)
-            {
-                var e = swellEmission[i];
-                coreBlock.Clear();
-                coreBlock.SetColor(swellIds[i], new Color(e.r * kb, e.g * kb, e.b * kb, e.a));
-                swellRenderers[i].SetPropertyBlock(coreBlock, swellSlots[i]);
-            }
-            if (swellRenderers.Length > 0) coreBlock.Clear();
+            for (int i = 0; i < swellPaint.Length; i++) Paint.SetGlow(swellPaint[i], kb);
         }
 
         /// <summary>Poses part d from one track at phase t (keys interpolated, or held with Interpolate off).</summary>
@@ -1005,9 +981,8 @@ namespace DungeonConveyor
             playing = -1;
             if (coreBright && coreRenderer != null)
             {
-                coreRenderer.SetPropertyBlock(null, coreSlot);
-                for (int i = 0; i < swellRenderers.Length; i++)
-                    if (swellRenderers[i] != null) swellRenderers[i].SetPropertyBlock(null, swellSlots[i]);
+                Paint.SetGlow(corePaint, 1f);
+                for (int i = 0; i < swellPaint.Length; i++) Paint.SetGlow(swellPaint[i], 1f);
                 coreBright = false;
             }
             if (seamPlate >= 0) SetSeam(seamPlate, seamRest);
@@ -1092,6 +1067,7 @@ namespace DungeonConveyor
             if (stepIndex != glowStep)
             {
                 glowStep = stepIndex;
+                Paint.Cool(CoolHeat[stepIndex]); // slots with a block (palette or glow) cool here, the rest by material
                 if (glowSets != null)
                     for (int i = 0; i < glow.Count; i++)
                         if (glow[i] != null && glowSets[i * 4 + 1 + stepIndex] != null) glow[i].sharedMaterials = glowSets[i * 4 + 1 + stepIndex];
@@ -1103,6 +1079,7 @@ namespace DungeonConveyor
         static readonly int EmissiveFactor = Shader.PropertyToID("emissiveFactor"), EmissionColor = Shader.PropertyToID("_EmissionColor"),
             BaseColorFactor = Shader.PropertyToID("baseColorFactor"), BaseColor = Shader.PropertyToID("_BaseColor");
         static readonly Color CoolStone = new Color(0.18f, 0.17f, 0.2f, 1f);
+        static readonly float[] CoolHeat = { 0.55f, 0.2f, 0f };
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() => cooled.Clear();
@@ -1112,11 +1089,10 @@ namespace DungeonConveyor
             if (!cooled.TryGetValue(hot, out var set))
             {
                 set = new Material[3];
-                float[] heat = { 0.55f, 0.2f, 0f };
                 for (int i = 0; i < 3; i++)
                 {
                     var m = new Material(hot) { name = hot.name + " (cooled " + i + ")" };
-                    float h = heat[i];
+                    float h = CoolHeat[i];
                     foreach (var id in new[] { EmissiveFactor, EmissionColor })
                         if (m.HasProperty(id)) m.SetColor(id, m.GetColor(id) * h);
                     foreach (var id in new[] { BaseColorFactor, BaseColor })

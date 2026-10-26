@@ -91,9 +91,52 @@ MonoBehaviour:
     PlateSeconds: 1
     PlateImpulse: 1.6
     SeamWarnBand: 0.08
-    SeamFlare: 3
-    SeamRestGlow: 0.45
+    SeamFlare: 6.9
+    SeamRestGlow: 0.1
     EnrageHold: 1
+  Palette:
+    Compensate: 1
+    Elements:
+    - Element: 1
+      Colors:
+      - Role: 2
+        Color: {r: 1, g: 0.3529412, b: 0.12156863, a: 1}
+      - Role: 3
+        Color: {r: 1, g: 0.6901961, b: 0.2901961, a: 1}
+      - Role: 4
+        Color: {r: 0.72156864, g: 0.1882353, b: 0.047058824, a: 1}
+      - Role: 7
+        Color: {r: 1, g: 0.47843137, b: 0.101960786, a: 1}
+    - Element: 2
+      Colors:
+      - Role: 2
+        Color: {r: 1, g: 0.9411765, b: 0.41568628, a: 1}
+      - Role: 3
+        Color: {r: 1, g: 0.9843137, b: 0.8392157, a: 1}
+      - Role: 4
+        Color: {r: 0.84705883, g: 0.7058824, b: 0, a: 1}
+      - Role: 7
+        Color: {r: 1, g: 0.96862745, b: 0.627451, a: 1}
+    - Element: 3
+      Colors:
+      - Role: 2
+        Color: {r: 0.49803922, g: 0.84705883, b: 1, a: 1}
+      - Role: 3
+        Color: {r: 0.84705883, g: 0.95686275, b: 1, a: 1}
+      - Role: 4
+        Color: {r: 0.23529412, g: 0.56078434, b: 0.84705883, a: 1}
+      - Role: 7
+        Color: {r: 0.56078434, g: 0.9019608, b: 1, a: 1}
+    - Element: 4
+      Colors:
+      - Role: 2
+        Color: {r: 0.4862745, g: 1, b: 0.22745098, a: 1}
+      - Role: 3
+        Color: {r: 0.78431374, g: 1, b: 0.5411765, a: 1}
+      - Role: 4
+        Color: {r: 0.24313726, g: 0.61960787, b: 0.10980392, a: 1}
+      - Role: 7
+        Color: {r: 0.54901963, g: 1, b: 0.18039216, a: 1}
   Entries:
   - Id: Crawler
     Name: Pebble Skitterer
@@ -112,6 +155,8 @@ MonoBehaviour:
     BossModel: {fileID: 0}
     BossGait: {fileID: 0}
     BossClips: []
+    Palette: {fileID: 11400000, guid: 107414caf7f4d1e4f8a7e9acba63f11f, type: 2}
+    BossPalette: {fileID: 0}
   - Id: CrystalSpider
     Name: Ore-eater
     Model: {fileID: 3254517452895515522, guid: dbc2c061035fcc1408c04b9eeff81b81, type: 3}
@@ -130,6 +175,8 @@ MonoBehaviour:
     BossModel: {fileID: 0}
     BossGait: {fileID: 0}
     BossClips: []
+    Palette: {fileID: 11400000, guid: 1301b8e5ebeb00a42b9c11fba1ee2825, type: 2}
+    BossPalette: {fileID: 0}
   - Id: Wasp
     Name: Rock Bat
     Model: {fileID: 7265235581013586688, guid: 7d4afa02a0c8e1045bc41899c6273d92, type: 3}
@@ -148,6 +195,8 @@ MonoBehaviour:
     BossModel: {fileID: 0}
     BossGait: {fileID: 0}
     BossClips: []
+    Palette: {fileID: 11400000, guid: d17ab1eb3d429a84fa432b333549da68, type: 2}
+    BossPalette: {fileID: 0}
   - Id: AcidSpitter
     Name: Magma Spitter
     Model: {fileID: 793437179945401501, guid: 6d1d045f3a3aa394cab231eb7d371465, type: 3}
@@ -166,6 +215,8 @@ MonoBehaviour:
     BossModel: {fileID: 0}
     BossGait: {fileID: 0}
     BossClips: []
+    Palette: {fileID: 11400000, guid: b52c33d7be6957d4f8fee0a400d5d04a, type: 2}
+    BossPalette: {fileID: 0}
   - Id: Brute
     Name: Ore Golem
     Model: {fileID: 1758385604813967037, guid: b85f57af2ba4ff54abfab69e93d888cd, type: 3}
@@ -186,3 +237,5 @@ MonoBehaviour:
     BossClips:
     - {fileID: 11400000, guid: 65e7be0035ac0c64291b905c96ee695b, type: 2}
     - {fileID: 11400000, guid: a62f607c434e19a4c90b05b127ec542f, type: 2}
+    Palette: {fileID: 11400000, guid: c6336194c9a738f48b89abff86bc81e1, type: 2}
+    BossPalette: {fileID: 11400000, guid: 9837679b515d9c6458c007c58e828398, type: 2}
