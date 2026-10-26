@@ -200,7 +200,7 @@ MonoBehaviour:
   - Id: AcidSpitter
     Name: Magma Spitter
     Model: {fileID: 793437179945401501, guid: 6d1d045f3a3aa394cab231eb7d371465, type: 3}
-    Scale: 1.1
+    Scale: 0.95
     Health: 150
     Speed: 0.95
     CoreDamage: 30
