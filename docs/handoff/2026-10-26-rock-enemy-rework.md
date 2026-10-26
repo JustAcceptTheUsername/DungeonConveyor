@@ -139,3 +139,26 @@ script: `Enemy.Spawn(EnemyCatalog.Instance.Entries[i], 1f, map, site, root, mate
 
 Local-only files that are never committed: `Packages/manifest.json`, `Packages/packages-lock.json` (the `com.unity.pipeline` CLI package),
 `ProjectSettings/ProjectSettings.asset`, FMOD cache/plist churn and `fmod_editor.log`.
+
+## 9. Element palettes (Dido's swappable colours, added in the polish pass)
+Every enemy material is named after its colour **role** (`DCX_Stone`, `DCX_StoneDark`, `DCX_Accent`, `DCX_Accent2`,
+`DCX_AccentDark`, `DCX_Metal`, `DCX_Plate`, `DCX_GlowCore`, `DCX_GlowHostile`), and the stone bands are grey vertex
+colours, so any role can be recoloured.
+- **Per enemy:** `Assets/Models/Enemies/<Model>_Palette.asset` (`EnemyPalette`): role → authored sRGB colour, linked
+  as `EnemyCatalog.Entry.Palette` (`BossPalette` for the boss model). Edit `Color` to recolour that enemy.
+- **Per element:** `EnemyCatalog` → `Palette.Elements` (shared): per element, the roles it recolours. The starting
+  colours (Accent / Accent2 / AccentDark / GlowCore: Fire orange-red, Frost icy blue, Lightning yellow-white, Poison
+  green) are **placeholders** to tune. An `EnemyPalette.Elements` entry overrides the shared one for that enemy.
+- **API:** `enemy.SetElement(EnemyElement.Frost)` or `enemy.SetElement(Element.Frost)`; `None` = the authored look
+  (then the enemy carries no property blocks at all). Debug: `Enemy.SetElementAll(e, andNewOnes)`.
+- **Bloom compensation:** `EnemyPalette.ExportColor` is the exporter's `export_color`, ported (it reproduces every
+  exported material exactly). `Palette.Compensate` (on) applies it to new colours; turn it off once the bloom
+  threshold goes up (~1.1) and the glbs are exported with `--raw-colors`. Colours outside the calibrated tables use
+  a fitted model; glow colours outside `Glows` are unmeasured (measure in game, add them).
+- **Rendering:** `EnemyPaint` owns all property blocks on a model and merges the palette with the rig's glows (Core
+  swell, plate seams, crumble cooling). `EnemyLook` (ink, flash, cracks, status) draws on its own meshes and is
+  unaffected. Note: Unity takes renderers with a property block out of the SRP Batcher, so only recoloured enemies
+  pay that cost (CPU 150 mixed, 4/5 recoloured: ~1.6 ms/frame, 0 B/frame, as before).
+- **New enemy:** export it (the sidecar `<Id>_palette.json` lands next to the glb), copy the glb in, then
+  `Dungeon/Import Enemy Palettes...` on the sidecar folder (creates/updates `<Id>_Palette.asset`, keeps edited
+  colours, then runs the catalog sync).

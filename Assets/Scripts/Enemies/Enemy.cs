@@ -18,7 +18,10 @@ namespace DungeonConveyor
 
         /// <summary>
         /// Footstep hook: a walk's loop events (Land, Step) on an enemy on screen, throttled over all enemies
-        /// (RigSettings.LoopEventsPerSecond). Nothing plays a sound on it yet; an Sfx can subscribe.
+        /// (RigSettings.LoopEventsPerSecond). Nothing plays a sound on it yet; an Sfx can subscribe. Today only the Magma
+        /// Spitter's Walk has them (Step 0.222/0.5/0.889, Land 0.833). Any walker gets them by adding
+        /// {"Time": t, "Name": "Step"} entries to its Walk clip's Events (e.g. on the Ore-eater's and Skitterer's
+        /// foot plants); no code change.
         /// </summary>
         public static System.Action<Enemy, string> OnLoopEvent;
         static float loopTokens, loopTokenTime;
@@ -320,7 +323,8 @@ namespace DungeonConveyor
             paint.Apply(palette, element, cfg == null || cfg.Compensate, cfg != null ? cfg.Elements : null);
         }
 
-        /// <summary>Debug/eval: every enemy alive (null: and every one spawned from now on, until set back) as e.</summary>
+        /// <summary>Debug/eval: every enemy alive as e; andNewOnes: every one spawned from now on too (until called again
+        /// without it). E.g. unity command eval "DungeonConveyor.Enemy.SetElementAll(DungeonConveyor.EnemyElement.Frost, true)".</summary>
         public static void SetElementAll(EnemyElement e, bool andNewOnes = false)
         {
             for (int i = 0; i < All.Count; i++) All[i].SetElement(e);
