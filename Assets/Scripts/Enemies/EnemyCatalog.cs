@@ -65,7 +65,11 @@ namespace DungeonConveyor
             [Tooltip("The outline is never thinner than this many pixels (zoomed out).")]
             public float InkMinPixels = 1.5f;
             [Tooltip("White flash on a hit.")]
-            public float FlashSeconds = 0.065f;
+            public float FlashSeconds = 0.08f;
+            [Tooltip("How white the hit flash paints the body (1 = fully white).")]
+            [Range(0f, 1f)] public float FlashStrength = 1f;
+            [Tooltip("Extra brightness of the flash above white (HDR emission), so bloom and the grade can't grey it out.")]
+            public float FlashEmission = 1f;
             [Tooltip("Rock chips per hit (at most one spray every 0.12 s per enemy).")]
             public int ChipsPerHit = 3;
             [Tooltip("Health fractions below which the first and second crack stages show.")]
@@ -87,6 +91,12 @@ namespace DungeonConveyor
             [Range(0f, 0.5f)] public float BobJitter = 0.15f;
             [Tooltip("Health bar height in world units (about 5 px at default zoom).")]
             public float BarHeight = 0.09f;
+            [Tooltip("Health bar fill at full, half and low health (bright and saturated: low health must still read on " +
+                     "the dark back).")]
+            public Color BarFull = new Color(0.36f, 1f, 0.36f, 1f), BarHalf = new Color(1f, 0.9f, 0.22f, 1f),
+                BarLow = new Color(1f, 0.27f, 0.2f, 1f);
+            [Tooltip("Gap between the body and its bar, along the camera's up (world units at size 1).")]
+            public float BarMargin = 0.1f;
         }
 
         /// <summary>Tuning of the rigid-part animation (EnemyRig, MeteorHatch).</summary>
@@ -110,6 +120,10 @@ namespace DungeonConveyor
             public GameObject MeteorShell;
             [Tooltip("Shell height relative to the enemy's height.")]
             public float ShellSize = 1.5f;
+            [Tooltip("Tallest a shell gets (world units), so a big enemy's shell doesn't swallow its neighbours.")]
+            public float ShellMaxHeight = 1.4f;
+            [Tooltip("Largest the crack flash gets (world units across).")]
+            public float CrackFlashMax = 0.6f;
             [Tooltip("Seconds after landing when the shell cracks open and the enemy pops out.")]
             public float CrackAt = 0.15f;
             [Tooltip("Seconds the pop out of the shell takes.")]

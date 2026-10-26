@@ -1,6 +1,6 @@
 // Feedback layer drawn over an enemy model (see EnemyLook): a dark ink outline (inverted hull pushed out along
 // smoothed normals kept in UV3, never thinner than a pixel or so) and an overlay on the body itself for the hit flash,
-// status tints (rim + wash) and glowing damage cracks. The model's own materials stay untouched. One material per
+// status tints (rim + wash) and glowing damage cracks. The flash is HDR white (_FlashEmission above 1). The model's own materials stay untouched. One material per
 // enemy, all values in UnityPerMaterial, so the SRP Batcher still batches them.
 Shader "DungeonConveyor/EnemyLook"
 {
@@ -11,6 +11,7 @@ Shader "DungeonConveyor/EnemyLook"
         _InkMinPixels ("Ink min width (pixels)", Float) = 1.5
         _UseSmooth ("Smoothed normals in UV3", Float) = 1
         _Flash ("Flash (0-1)", Float) = 0
+        _FlashEmission ("Flash brightness above white (HDR)", Float) = 1
         _Tint ("Status tint (a = strength)", Color) = (0, 0, 0, 0)
         _Crack ("Cracks (0-1)", Float) = 0
         _CrackColor ("Crack glow", Color) = (1, 0.18, 0.388, 1)
@@ -31,7 +32,7 @@ Shader "DungeonConveyor/EnemyLook"
         CBUFFER_START(UnityPerMaterial)
             half4 _InkColor;
             float _InkWidth, _InkMinPixels, _UseSmooth;
-            half _Flash;
+            half _Flash, _FlashEmission;
             half4 _Tint;
             half _Crack;
             half4 _CrackColor;
@@ -143,7 +144,8 @@ Shader "DungeonConveyor/EnemyLook"
                 col = lerp(col, _CrackColor.rgb, saturate(glow * 1.5));
                 a = max(a, glow);
 
-                col = lerp(col, half3(1, 1, 1), _Flash);
+                // The flash goes white and past it (emission), so bloom and the grade can't grey it out.
+                col = lerp(col, (1.0 + _FlashEmission).xxx, _Flash);
                 a = max(a, _Flash);
                 return half4(col, saturate(a) * _Fade);
             }

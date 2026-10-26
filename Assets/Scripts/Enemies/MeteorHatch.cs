@@ -47,8 +47,11 @@ namespace DungeonConveyor
             h.transform.SetParent(parent, false);
             var fwd = Vector3.ProjectOnPlane(facing.sqrMagnitude > 1e-6f ? facing : Random.onUnitSphere, up);
             h.transform.SetPositionAndRotation(ground, Quaternion.LookRotation(fwd.normalized, up) * Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
-            // The shell model is 0.9 tall at scale 1 (core centre at 0.42).
-            h.transform.localScale = Vector3.one * Mathf.Max(0.1f, height * cfg.ShellSize / 0.9f);
+            // The shell model is 0.9 tall at scale 1 (core centre at 0.42). Big enemies get a capped shell: the Golem's
+            // would otherwise swallow its neighbours (the critter still pops out of it, overshooting its rim).
+            float tall = height * cfg.ShellSize;
+            if (cfg.ShellMaxHeight > 0f) tall = Mathf.Min(tall, cfg.ShellMaxHeight);
+            h.transform.localScale = Vector3.one * Mathf.Max(0.1f, tall / 0.9f);
             h.gameObject.SetActive(true);
             h.Begin();
         }
@@ -127,8 +130,13 @@ namespace DungeonConveyor
                 cracked = true;
                 var c = transform.TransformPoint(Vector3.up * coreHeight);
                 float s = transform.lossyScale.x;
-                Fx.Burst(c, EnemyLook.HostileGlow, 1.1f * s);
-                Fx.Flash(c, new Color(1f, 0.55f, 0.7f, 1f), 0.9f * s);
+                float cap = cfg.CrackFlashMax > 0f ? cfg.CrackFlashMax : float.MaxValue;
+                Fx.Burst(c, EnemyLook.HostileGlow, Mathf.Min(1.1f * s, cap * 1.5f));
+                // An additive, capped flash for two frames: a glow through the cracks, not a flat pink disc.
+                var glow = EnemyLook.HostileGlow;
+                glow.a = 0.5f;
+                float flash = Mathf.Min(0.9f * s, cap);
+                Fx.Glow(c, glow, flash, flash * 0.6f, 0.08f);
                 EnemyLook.Chips(c, 5, s, 1.4f);
                 nextPose = 0f;
             }

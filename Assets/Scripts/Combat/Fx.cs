@@ -43,7 +43,7 @@ namespace DungeonConveyor
         static readonly List<Effect> effects = new List<Effect>();
         static readonly List<Blob> blobs = new List<Blob>();
         static Transform root;
-        static Material material;
+        static Material material, additive;
         static Sprite soft;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -53,6 +53,7 @@ namespace DungeonConveyor
             blobs.Clear();
             root = null;
             material = null;
+            additive = null;
         }
 
         public static void Init(Transform parent, Material spriteMaterial)
@@ -63,6 +64,9 @@ namespace DungeonConveyor
         }
 
         public static Material Material => material;
+
+        /// <summary>Additive sprite material (Resources/Shaders/FxAdditive) for glows that add light instead of painting.</summary>
+        public static Material Additive => additive != null ? additive : additive = PlanetArt.NewMaterial("FxAdditive");
 
         /// <summary>White radial glow, 64 px, one world unit across.</summary>
         public static Sprite Soft
@@ -84,12 +88,19 @@ namespace DungeonConveyor
             }
         }
 
-        public static void Spawn(Vector3 pos, Color color, float startScale, float endScale, float life, Vector3 velocity = default)
+        public static void Spawn(Vector3 pos, Color color, float startScale, float endScale, float life, Vector3 velocity = default) =>
+            Spawn(material, pos, color, startScale, endScale, life, velocity);
+
+        /// <summary>An additive glow (alpha = strength): overlapping glows brighten instead of stacking flat discs.</summary>
+        public static void Glow(Vector3 pos, Color color, float startScale, float endScale, float life) =>
+            Spawn(Additive, pos, color, startScale, endScale, life, Vector3.zero);
+
+        static void Spawn(Material mat, Vector3 pos, Color color, float startScale, float endScale, float life, Vector3 velocity)
         {
             if (root == null) return;
             var sr = new GameObject("Fx").AddComponent<SpriteRenderer>();
             sr.transform.SetParent(root, false);
-            if (material != null) sr.sharedMaterial = material;
+            if (mat != null) sr.sharedMaterial = mat;
             sr.sprite = Soft;
             sr.color = color;
             sr.transform.position = pos;

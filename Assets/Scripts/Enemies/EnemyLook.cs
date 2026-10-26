@@ -18,7 +18,7 @@ namespace DungeonConveyor
 
         static readonly int InkColorId = Shader.PropertyToID("_InkColor"), InkWidthId = Shader.PropertyToID("_InkWidth"),
             InkMinPixelsId = Shader.PropertyToID("_InkMinPixels"), UseSmoothId = Shader.PropertyToID("_UseSmooth"),
-            FlashId = Shader.PropertyToID("_Flash"), TintId = Shader.PropertyToID("_Tint"), CrackId = Shader.PropertyToID("_Crack"),
+            FlashId = Shader.PropertyToID("_Flash"), FlashEmissionId = Shader.PropertyToID("_FlashEmission"), TintId = Shader.PropertyToID("_Tint"), CrackId = Shader.PropertyToID("_Crack"),
             CrackColorId = Shader.PropertyToID("_CrackColor"), CrackScaleId = Shader.PropertyToID("_CrackScale"),
             GlowId = Shader.PropertyToID("_Glow"), FadeId = Shader.PropertyToID("_Fade"),
             SunDirId = Shader.PropertyToID("_PlanetSunDir"); // set by CameraController
@@ -81,6 +81,7 @@ namespace DungeonConveyor
             material.SetFloat(InkMinPixelsId, cfg.InkMinPixels);
             material.SetColor(CrackColorId, HostileGlow);
             material.SetFloat(CrackScaleId, cfg.CrackScale);
+            material.SetFloat(FlashEmissionId, Mathf.Max(0f, cfg.FlashEmission));
 
             bool smooth = true;
             foreach (var mf in model.GetComponentsInChildren<MeshFilter>())
@@ -198,7 +199,7 @@ namespace DungeonConveyor
         public void Tick(float health01, Color tint, Vector3 ground, Vector3 up, Vector3 facing, float size, float air)
         {
             float now = Time.time;
-            float flash = cfg.FlashSeconds > 0f ? Mathf.Clamp01((flashUntil - now) / cfg.FlashSeconds) * 0.9f : 0f;
+            float flash = cfg.FlashSeconds > 0f ? Mathf.Clamp01((flashUntil - now) / cfg.FlashSeconds) * cfg.FlashStrength : 0f;
             float crack = 0f, glow = 0f;
             if (health01 < cfg.CrackAt.y)
             {

@@ -75,7 +75,7 @@ namespace DungeonConveyor
         IsoGrid map;
         Transform body, bar;
         SpriteRenderer barBack, barFill, status, meteor;
-        float modelHeight = 0.5f;
+        float modelHeight = 0.5f, modelRadius = 0.25f;
         Vector2Int fromCell, toCell;
         float fromLevel, toLevel, t = 1f, stepLength = 0.001f, bob, bobSpeed = 1f, fallTime;
         Vector3 fallFrom, facing;
@@ -222,6 +222,7 @@ namespace DungeonConveyor
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
             modelHeight = Mathf.Max(0.2f, bounds.max.y - body.position.y);
+            modelRadius = 0.5f * Mathf.Max(bounds.size.x, bounds.size.z);
             if (EnemyRig.On) rig = EnemyRig.Create(model, gait, clips, IsFlying); // before the look adds its own meshes
             chewClip = lobClip = slamClip = enrageClip = -1;
             if (rig != null)
@@ -675,9 +676,28 @@ namespace DungeonConveyor
             bool show = Health < MaxHealth;
             barBack.enabled = barFill.enabled = show;
             if (!show) return;
-            bar.position = transform.position + up * (modelHeight * size + 0.15f);
-            Billboard(bar);
             float f = Mathf.Clamp01(Health / MaxHealth);
+            if (look != null)
+            {
+                // Above the body on screen: offset along the camera's up past the body's outline (its bounding
+                // sphere), not along the planet's up, which the top-down camera projects onto the body itself.
+                var fb = EnemyLook.Settings;
+                if (cam == null) cam = Camera.main;
+                float sc = body.localScale.x;
+                var centre = transform.position + up * (modelHeight * 0.5f * sc);
+                float reach = Mathf.Sqrt(modelRadius * modelRadius + 0.25f * modelHeight * modelHeight) * sc;
+                var screenUp = cam != null ? cam.transform.up : up;
+                bar.position = centre + screenUp * (reach + fb.BarMargin * Mathf.Sqrt(sc) + fb.BarHeight * 0.5f);
+                Billboard(bar);
+                // A bright, saturated fill from green through yellow to red: low health stays readable on the dark back.
+                barFill.color = f > 0.5f ? Color.Lerp(fb.BarHalf, fb.BarFull, (f - 0.5f) * 2f) : Color.Lerp(fb.BarLow, fb.BarHalf, f * 2f);
+            }
+            else
+            {
+                bar.position = transform.position + up * (modelHeight * size + 0.15f);
+                Billboard(bar);
+                barFill.color = Color.Lerp(new Color(1f, 0.2f, 0.15f), new Color(0.4f, 1f, 0.3f), f);
+            }
             if (look != null)
             {
                 // Thicker bar (about 5 px at default zoom) in a dark ink border, so it reads on the bright ground.
@@ -697,7 +717,6 @@ namespace DungeonConveyor
                 barFill.transform.localPosition = pos + new Vector3(0f, 0f, -0.002f);
                 barFill.transform.localScale = new Vector3(width * f, 0.045f, 1f);
             }
-            barFill.color = Color.Lerp(new Color(1f, 0.2f, 0.15f), new Color(0.4f, 1f, 0.3f), f);
         }
 
         /// <summary>World point turrets aim at (middle of the body).</summary>
