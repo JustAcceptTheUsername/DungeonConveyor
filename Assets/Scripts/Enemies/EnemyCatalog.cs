@@ -220,6 +220,8 @@ namespace DungeonConveyor
             public float SeamWarnBand = 0.08f;
             [Tooltip("Seam glow at the threshold, times its own.")]
             public float SeamFlare = 3f;
+            [Tooltip("Resting seam glow (plate far from its threshold), times its own.")]
+            public float SeamRestGlow = 0.45f;
             [Tooltip("Most seconds the enemy stands for its Enrage clip when a plate breaks: it stands for the whole clip, " +
                      "sped up to fit (0 = keeps walking while the clip plays).")]
             public float EnrageHold = 1f;

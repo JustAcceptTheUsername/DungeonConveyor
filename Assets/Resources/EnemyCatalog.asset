@@ -92,6 +92,7 @@ MonoBehaviour:
     PlateImpulse: 1.6
     SeamWarnBand: 0.08
     SeamFlare: 3
+    SeamRestGlow: 0.45
     EnrageHold: 1
   Entries:
   - Id: Crawler

@@ -109,7 +109,7 @@ namespace DungeonConveyor
         readonly Color[] seamEmission;
         readonly float[] plateAt;
         MaterialPropertyBlock seamBlock;
-        float health01 = 1f, seamShown = 1f;
+        float health01 = 1f, seamShown = 1f, seamRest = 1f;
         int seamPlate = -1;
 
         // Crumble (every part with a mesh, parents before children)
@@ -370,6 +370,10 @@ namespace DungeonConveyor
             plateRot = new Quaternion[p];
             plateScale = new Vector3[p];
             for (int i = 0; i < p; i++) plateStart[i] = -1f;
+            // Intact seams rest at SeamRestGlow of their material's glow (per renderer, never the shared material).
+            seamRest = Mathf.Max(0f, cfg.SeamRestGlow);
+            seamShown = seamRest;
+            for (int i = 0; i < p; i++) SetSeam(i, seamRest);
 
             if (n > 0) ApplyPose();
         }
@@ -755,32 +759,39 @@ namespace DungeonConveyor
         void GlowSeam()
         {
             int next = platesBroken < plates.Length && seamRenderer[platesBroken] != null ? platesBroken : -1;
-            float k = 1f;
+            float k = seamRest;
             if (next >= 0 && plateAt[next] >= 0f && dieTime < 0f)
             {
                 float band = Mathf.Max(0.001f, cfg.SeamWarnBand);
                 float close = 1f - Mathf.Clamp01((health01 - plateAt[next]) / band);
-                if (close > 0f) k = 1f + (Mathf.Max(1f, cfg.SeamFlare) - 1f) * close * (0.8f + 0.2f * Mathf.Sin(Time.time * 18f));
+                if (close > 0f) k = seamRest + (Mathf.Max(seamRest, cfg.SeamFlare) - seamRest) * close * (0.8f + 0.2f * Mathf.Sin(Time.time * 18f));
             }
-            if (next != seamPlate && seamPlate >= 0 && seamShown != 1f)
+            if (next != seamPlate && seamPlate >= 0 && seamShown != seamRest)
             {
-                // The flared seam broke off (or died): back to its own glow.
-                if (seamRenderer[seamPlate] != null) seamRenderer[seamPlate].SetPropertyBlock(null, seamSlot[seamPlate]);
-                seamShown = 1f;
+                // The flared seam broke off (or died): back to its resting glow.
+                SetSeam(seamPlate, seamRest);
+                seamShown = seamRest;
             }
             seamPlate = next;
             if (next < 0 || Mathf.Abs(k - seamShown) < 0.01f) return;
             seamShown = k;
-            var r = seamRenderer[next];
+            SetSeam(next, k);
+        }
+
+        /// <summary>Seam i's glow at k times its material's own (k = 1 clears the block).</summary>
+        void SetSeam(int i, float k)
+        {
+            var r = seamRenderer[i];
+            if (r == null) return;
             if (k == 1f)
             {
-                r.SetPropertyBlock(null, seamSlot[next]);
+                r.SetPropertyBlock(null, seamSlot[i]);
                 return;
             }
             if (seamBlock == null) seamBlock = new MaterialPropertyBlock();
-            var e = seamEmission[next];
-            seamBlock.SetColor(seamColorId[next], new Color(e.r * k, e.g * k, e.b * k, e.a));
-            r.SetPropertyBlock(seamBlock, seamSlot[next]);
+            var e = seamEmission[i];
+            seamBlock.SetColor(seamColorId[i], new Color(e.r * k, e.g * k, e.b * k, e.a));
+            r.SetPropertyBlock(seamBlock, seamSlot[i]);
         }
 
         static float Or(float value, float fallback) => value >= 0f ? value : fallback;
@@ -999,9 +1010,9 @@ namespace DungeonConveyor
                     if (swellRenderers[i] != null) swellRenderers[i].SetPropertyBlock(null, swellSlots[i]);
                 coreBright = false;
             }
-            if (seamPlate >= 0 && seamRenderer[seamPlate] != null) seamRenderer[seamPlate].SetPropertyBlock(null, seamSlot[seamPlate]);
+            if (seamPlate >= 0) SetSeam(seamPlate, seamRest);
             seamPlate = -1;
-            seamShown = 1f;
+            seamShown = seamRest;
             pop.localScale = popRestScale;
             pop.localPosition = popRestPos;
             // One flat list of pieces: a child must not move with its parent on top of its own flight.
