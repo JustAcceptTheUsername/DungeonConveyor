@@ -184,6 +184,9 @@ namespace DungeonConveyor
             barBack = NewSprite("HealthBack", bar, material);
             barFill = NewSprite("Health", bar, material);
             barBack.sprite = barFill.sprite = Pixel;
+            // Both are transparent sprites, sorted by distance: without an order the (92% opaque) back sometimes draws
+            // over the shorter fill, whose centre sits further left, and the fill reads dark brown.
+            barFill.sortingOrder = barBack.sortingOrder + 1;
             barBack.color = look != null ? new Color(0.106f, 0.063f, 0.125f, 0.92f) : new Color(0f, 0f, 0f, 0.7f);
             barBack.enabled = barFill.enabled = false;
             status = NewSprite("Status", transform, material);
