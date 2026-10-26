@@ -118,6 +118,11 @@ namespace DungeonConveyor
         Vector2Int lobTarget;
         Fx.Blob blob;
         System.Action<string> onRigEvent;
+        // The ring on the lob's target belt, and the leak exit (a slammer holding its impact pose, then sucked in).
+        LineRenderer lobRing;
+        float ringStart = -1f, ringFadeAt;
+        bool impactHold;
+        float exitTime = -1f;
 
         static Camera cam;
         static void Billboard(Transform tr)
@@ -430,6 +435,7 @@ namespace DungeonConveyor
                 if (CanLob && FindBelt(flows.Belts, out lobTarget))
                 {
                     BeginAttack(Attack.Lob, lobClip, cfg.LobDwell, "Launch");
+                    ShowRing();
                     return StepResult.Moving;
                 }
                 if (rig != null && chewClip >= 0 && cfg.ChewDwell > 0f)
@@ -551,8 +557,29 @@ namespace DungeonConveyor
                 case Attack.Slam:
                     if (!fire) return StepResult.Moving;
                     attackResolved = true;
-                    Fx.Burst(GroundPos + GroundPos.normalized * ConveyorArt.SurfaceHeight, new Color(0.62f, 0.57f, 0.5f, 0.85f), 1.1f * body.localScale.x);
-                    EndAttack();
+                    var ground = GroundPos + GroundPos.normalized * ConveyorArt.SurfaceHeight;
+                    float s = body.localScale.x;
+                    Fx.Burst(ground, new Color(0.62f, 0.57f, 0.5f, 0.85f), 1.1f * s);
+                    if (look != null && rig != null && EnemyRig.Settings.ImpactHoldSteps > 0)
+                    {
+                        // It holds the impact pose with a hostile burst (Remove leaves it standing for a moment);
+                        // the Core damage and the counts land now, as before.
+                        rig.PoseNow();
+                        impactHold = true;
+                        attack = Attack.None;
+                        // Lifted off the ground (a camera-facing sprite on the ground sinks half into it, under the
+                        // body), plus an expanding hostile ring on the ground around it (TickExit).
+                        var lift = ground + GroundPos.normalized * (0.12f + modelHeight * 0.35f * s);
+                        Fx.Burst(lift, EnemyLook.HostileGlow, 0.9f * s);
+                        var glow = EnemyLook.HostileGlow;
+                        glow.a = 0.6f;
+                        float r = Mathf.Min(1.6f, (modelRadius + 0.2f) * s);
+                        Fx.Glow(lift, glow, r * 0.6f, r * 1.6f, 0.25f);
+                        EnemyLook.Chips(lift, 6, s, 1.4f);
+                        if (lobRing == null) lobRing = Fx.NewLine("LobRing", transform, EnemyLook.HostileGlow, 0.05f);
+                        ringStart = -1f; // not the lob's ring any more
+                    }
+                    else EndAttack();
                     return StepResult.ReachedCore;
                 default: // Enrage: a short stand while the clip plays
                     if (attackTime >= attackDwell) EndAttack();
@@ -573,8 +600,11 @@ namespace DungeonConveyor
 
         void EndAttack()
         {
-            // A lob plays out on its own (the spitter recovers while the blob flies); the rest stop with the attack.
-            if (attack != Attack.Lob) rig?.Stop();
+            // A lob plays out on its own (the spitter recovers while the blob flies) and a chew finishes its grind
+            // while it walks on (the legs walk meanwhile); the rest stop with the attack.
+            if (attack == Attack.Lob || attack == Attack.Chew) rig?.Release();
+            else rig?.Stop();
+            if (attack == Attack.Lob) FadeRing();
             attack = Attack.None;
             hasLastGround = false; // no jump in the walk phase
         }
@@ -586,6 +616,59 @@ namespace DungeonConveyor
             blob = null;
             attack = Attack.None;
             attackResolved = true;
+            if (lobRing != null) lobRing.enabled = false;
+            ringStart = -1f;
+        }
+
+        // ---------------------------------------------------------------- lob target ring
+
+        /// <summary>A hostile ring on the target belt: fades in over the wind-up, holds while the blob flies.</summary>
+        void ShowRing()
+        {
+            var cfg = EnemyRig.Settings;
+            if (!cfg.LobRing || !EnemyLook.On) return;
+            if (lobRing == null)
+            {
+                lobRing = Fx.NewLine("LobRing", transform, EnemyLook.HostileGlow, 0.05f);
+                lobRing.sortingOrder = 2;
+            }
+            var centre = SurfacePoint(lobTarget, map.HeightAt(lobTarget)) + map.Up(lobTarget) * ConveyorArt.SurfaceHeight;
+            Fx.Ring(lobRing, centre, Mathf.Max(0.05f, cfg.LobRingRadius), 40);
+            ringStart = Time.time;
+            ringFadeAt = -1f;
+            TickRing();
+        }
+
+        void FadeRing()
+        {
+            if (ringStart >= 0f && ringFadeAt < 0f) ringFadeAt = Time.time;
+        }
+
+        const float RingFadeSeconds = 0.25f;
+
+        void TickRing()
+        {
+            if (ringStart < 0f || lobRing == null) return;
+            float now = Time.time, a;
+            if (ringFadeAt >= 0f)
+            {
+                a = 1f - (now - ringFadeAt) / RingFadeSeconds;
+                if (a <= 0f)
+                {
+                    lobRing.enabled = false;
+                    ringStart = -1f;
+                    return;
+                }
+            }
+            else
+            {
+                float up = Mathf.Clamp01((now - ringStart) / Mathf.Max(0.05f, EnemyRig.Settings.LobDwell));
+                a = (0.3f + 0.7f * up) * (0.85f + 0.15f * Mathf.Sin(now * 20f));
+            }
+            var c = EnemyLook.HostileGlow;
+            c.a = a;
+            lobRing.startColor = lobRing.endColor = c;
+            lobRing.widthMultiplier = 0.8f + 0.4f * a;
         }
 
         /// <summary>Plates broke off: a short enraged stand with the Enrage clip (unless it is busy attacking).</summary>
@@ -727,6 +810,7 @@ namespace DungeonConveyor
                 }
             }
             frameDt = 0f; // time only counts once per Step
+            TickRing();
 
             if (look != null)
                 look.Tick(Health / MaxHealth, statusTint, GroundPos, up, facing, body.localScale.x, IsFlying ? Def.Hover + 0.1f : 0f);
@@ -832,7 +916,59 @@ namespace DungeonConveyor
             All.Remove(this);
             CancelAttack();
             if (look != null && !Alive && Landed && dieTime < 0f) Crumble();
-            else if (dieTime < 0f) Destroy(gameObject);
+            else if (impactHold && look != null && dieTime < 0f && exitTime < 0f) BeginExit();
+            else if (dieTime < 0f && exitTime < 0f) Destroy(gameObject);
+        }
+
+        /// <summary>
+        /// The leak exit of a slammer or diver (already out of All, counted and its damage dealt): it holds its impact
+        /// pose for RigSettings.ImpactHoldSteps pose steps, then is sucked into the Core (shrinks away, cracks aglow).
+        /// </summary>
+        void BeginExit()
+        {
+            exitTime = Time.time;
+            enabled = true;
+            if (lobRing != null) lobRing.enabled = true;
+            barBack.enabled = barFill.enabled = status.enabled = false;
+            dieScale = body.localScale;
+        }
+
+        void TickExit()
+        {
+            var cfg = EnemyRig.Settings;
+            float fps = Mathf.Max(1f, cfg.PoseFps);
+            float t = Time.time - exitTime, hold = Mathf.Max(0, cfg.ImpactHoldSteps) / fps;
+            float shrink = Mathf.Max(0.02f, cfg.ImpactShrinkSeconds);
+            if (lobRing != null)
+            {
+                // The impact ring: expands over the hold and the shrink, fading out (in pose steps).
+                float grow = Mathf.Clamp01(Mathf.Floor(t * fps + 1f) / fps / (hold + shrink));
+                float r = (modelRadius + 0.25f) * dieScale.x;
+                Fx.Ring(lobRing, GroundPos + GroundPos.normalized * ConveyorArt.SurfaceHeight, r * (0.7f + 0.9f * grow), 40);
+                var c = EnemyLook.HostileGlow;
+                c.a = 1f - grow * grow;
+                lobRing.startColor = lobRing.endColor = c;
+                lobRing.widthMultiplier = 1.4f - 0.6f * grow;
+            }
+            if (t < hold) return;
+            // In pose steps, like everything else on it.
+            float u = Mathf.Floor((t - hold) * fps + 1f) / Mathf.Max(1f, shrink * fps);
+            if (u >= 1f)
+            {
+                Destroy(gameObject);
+                return;
+            }
+            var up = GroundPos.normalized;
+            if (dieTime < 0f)
+            {
+                dieTime = Time.time; // once: the flash as it goes
+                var glow = EnemyLook.HostileGlow;
+                glow.a = 0.7f;
+                Fx.Glow(AimPoint, glow, 0.5f * modelRadius * dieScale.x, 0.1f, shrink + 0.05f);
+            }
+            float k = 1f - u;
+            body.localScale = Vector3.Scale(dieScale, new Vector3(k, k * k, k));
+            look.Crumble(u, GroundPos, up, facing, dieScale.x);
         }
 
         void Crumble()
@@ -856,6 +992,11 @@ namespace DungeonConveyor
         /// <summary>The crumble: squashes, tips over and sinks into the ground (fliers drop first), then is gone.</summary>
         void Update()
         {
+            if (exitTime >= 0f)
+            {
+                TickExit();
+                return;
+            }
             if (dieTime < 0f) return;
             float k = (Time.time - dieTime) / (rig != null ? rig.CrumbleSeconds : look.DeathSeconds);
             if (k >= 1f)

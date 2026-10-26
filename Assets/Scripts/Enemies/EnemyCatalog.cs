@@ -199,6 +199,15 @@ namespace DungeonConveyor
             public Vector3 LobMuzzle = new Vector3(0f, 0.35f, 0.25f);
             [Tooltip("Seconds an enemy with a Slam clip winds up at the Core; the damage lands on Impact.")]
             public float SlamDwell = 0.6f;
+            [Tooltip("Pose steps a slammer or diver holds its impact pose (with a hostile burst) before it is gone. Counts " +
+                     "and Core damage don't wait for it. 0 = gone at once.")]
+            public int ImpactHoldSteps = 3;
+            [Tooltip("Seconds it then takes to be sucked into the Core (shrinks away).")]
+            public float ImpactShrinkSeconds = 0.15f;
+            [Tooltip("A hostile ring on the belt a lobber aims at, fading in over the wind-up and out as the blob lands.")]
+            public bool LobRing = true;
+            [Tooltip("Ring radius (cells).")]
+            public float LobRingRadius = 0.42f;
 
             [Header("Armour plates (Plate_* parts)")]
             [Tooltip("Health fractions at which the Plate_* parts break off (spread evenly over the thresholds).")]
