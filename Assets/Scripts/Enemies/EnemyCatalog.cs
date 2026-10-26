@@ -104,8 +104,16 @@ namespace DungeonConveyor
         public class RigSettings
         {
             [Tooltip("Pose updates per second: limbs and body hold their pose between steps (12 = on twos at 24 fps). " +
-                     "Travel over the planet stays smooth.")]
+                     "Travel over the planet stays smooth. With PoseOnKeys the walk steps on its keys instead.")]
             public float PoseFps = 12f;
+            [Tooltip("The walk steps its pose as its phase crosses each key (a fast walker steps faster, a slow or chilled " +
+                     "one slower: no key is skipped and planted feet glide less), within PoseFpsMin-PoseFpsMax. " +
+                     "Off: every walk steps at PoseFps.")]
+            public bool PoseOnKeys = true;
+            [Tooltip("With PoseOnKeys: most pose steps per second.")]
+            public float PoseFpsMax = 24f;
+            [Tooltip("With PoseOnKeys: fewest pose steps per second (a walker that stands still).")]
+            public float PoseFpsMin = 8f;
             [Tooltip("Blend between the keyed poses at the current phase (off: hold each key, exactly as keyed).")]
             public bool Interpolate = true;
             [Tooltip("Multiplies each gait's StrideLength (distance walked per cycle). Lower = quicker steps.")]
@@ -157,6 +165,23 @@ namespace DungeonConveyor
             public float BankPerTurn = 0.08f;
             [Tooltip("How fast the bank follows the turning (per second).")]
             public float BankResponse = 7f;
+            [Tooltip("How fast a walker's facing eases round to a new direction (per second; 0 = snaps at cell borders). " +
+                     "Shown on the pose steps, so it stays on twos.")]
+            public float WalkTurnResponse = 10f;
+
+            [Header("Clip extras")]
+            [Tooltip("Loop events (a Walk's Land or Step keys) passed on to footstep hooks, at most this many per second " +
+                     "over all enemies (0 = none).")]
+            public float LoopEventsPerSecond = 40f;
+            [Tooltip("A small dust puff on each Land event of a walk (within the same budget).")]
+            public bool LandDust = true;
+            [Tooltip("Most a swelling Core (the spitter's Lob) brightens its glow, times its own; it follows the swell " +
+                     "linearly, and the Body's cracks pulse half again as much.")]
+            public float CoreGlowMax = 1.8f;
+            [Tooltip("An Ore-eater's Crystal_* parts grow this much on each Bite...")]
+            public float CrystalGrowStep = 0.05f;
+            [Tooltip("...up to this many times their size.")]
+            public float CrystalGrowMax = 1.3f;
 
             [Header("Attack telegraphs (gameplay; 0 = the old instant behaviour)")]
             [Tooltip("Seconds a saboteur with a Chew clip stands chewing at a belt; the belt is wrecked on Bite (or when " +
@@ -177,11 +202,15 @@ namespace DungeonConveyor
 
             [Header("Armour plates (Plate_* parts)")]
             [Tooltip("Health fractions at which the Plate_* parts break off (spread evenly over the thresholds).")]
-            public float[] PlateBreakAt = { 0.75f, 0.5f, 0.25f };
+            public float[] PlateBreakAt = { 0.8f, 0.6f, 0.4f, 0.2f };
             [Tooltip("Seconds a broken plate flies and sinks before it is gone.")]
             public float PlateSeconds = 1f;
             [Tooltip("Speed of a plate flying off (world units per second at scale 1).")]
             public float PlateImpulse = 1.6f;
+            [Tooltip("A plate's Seam glow flares as health comes within this much (health fraction) of its threshold.")]
+            public float SeamWarnBand = 0.08f;
+            [Tooltip("Seam glow at the threshold, times its own.")]
+            public float SeamFlare = 3f;
             [Tooltip("Most seconds the enemy stands for its Enrage clip when a plate breaks: it stands for the whole clip, " +
                      "sped up to fit (0 = keeps walking while the clip plays).")]
             public float EnrageHold = 1f;

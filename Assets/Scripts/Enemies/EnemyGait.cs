@@ -57,6 +57,11 @@ namespace DungeonConveyor
         [Tooltip("Plays exactly as keyed: all three amplitudes 1, whatever the knobs say (parented rigs such as the Golem's " +
                  "Torso > Arm > Forearm > Fist chain, where the gains would compound).")]
         public bool Raw;
+        [Tooltip("Walk only, optional: per key, the fraction (0-1) of the stride the body has covered by that key within " +
+                 "the cycle (flat while the feet are planted, surging on a hop). The rig shifts the body along its " +
+                 "facing by the difference to steady travel, so a hopper surges instead of gliding; the enemy's own " +
+                 "position (aim point, shadow) stays smooth. Empty: steady travel.")]
+        public float[] TravelCurve;
         [Tooltip("Phase (0-1) of each key.")]
         public float[] KeyTimes;
         public Track[] Tracks;
@@ -65,6 +70,24 @@ namespace DungeonConveyor
 
         public int Keys => KeyTimes != null ? KeyTimes.Length : 0;
         public bool Playable => Keys > 0 && Tracks != null;
+        /// <summary>Has a TravelCurve with one value per key.</summary>
+        public bool HasTravel => TravelCurve != null && TravelCurve.Length > 0 && TravelCurve.Length == Keys;
+
+        /// <summary>
+        /// The stride fraction covered at phase t (0-1) by the TravelCurve, keys interpolated, reaching 1 at the end
+        /// of the cycle; t itself without a curve.
+        /// </summary>
+        public float Travel(float t)
+        {
+            if (!HasTravel) return t;
+            var times = KeyTimes;
+            int n = times.Length, i0 = n - 1;
+            for (int i = 0; i < n; i++)
+                if (times[i] <= t) i0 = i;
+            float t0 = times[i0], t1 = i0 + 1 < n ? times[i0 + 1] : 1f;
+            float v0 = TravelCurve[i0], v1 = i0 + 1 < n ? TravelCurve[i0 + 1] : 1f + TravelCurve[0];
+            return Mathf.Lerp(v0, v1, t1 > t0 ? Mathf.Clamp01((t - t0) / (t1 - t0)) : 0f);
+        }
         /// <summary>Seconds per cycle at the source rate.</summary>
         public float Seconds => Mathf.Max(1, Frames) / Mathf.Max(1f, SourceFps);
         /// <summary>Cycles per second when played on time.</summary>

@@ -71,9 +71,46 @@ namespace DungeonConveyor
         readonly Color coreEmission;
         MaterialPropertyBlock coreBlock;
         bool coreBright;
-        float phase, nextPose, popStart = -1f, hitPose;
+        // The glow slots on the Core's Body (a spitter's cracks) pulse with the Core's swell.
+        readonly Renderer[] swellRenderers;
+        readonly int[] swellSlots, swellIds;
+        readonly Color[] swellEmission;
+        float phase, nextPose, lastStep = -1f, popStart = -1f, hitPose;
         int playing = -1, playSerial;
         float playStart, playRate = 1f, playPrev, playPhase;
+
+        // Pose steps on the walk's keys (RigSettings.PoseOnKeys): the keys shown at the last step.
+        int loopKeyShown = -1, clipKeyShown = -1;
+        // The next pose step goes halfway from what is shown to the new pose (a one-shot starting or stopping).
+        bool blendNext, blending;
+        // The loop key closest to rest: the walk resumes there after a one-shot.
+        readonly float neutralPhase;
+        // Released: the enemy walks on while the one-shot plays out (limbs back on the loop; a looping clip stops at
+        // the end of its cycle, finishAt in cycles).
+        bool released;
+        float finishAt = -1f;
+        float loopPrev; // the loop phase at the last pose step (loop events)
+
+        // Travel curve (a hopper's surge): the body's offset along its facing from steady travel, in pop-node units.
+        readonly bool travel;
+        readonly float travelMean;
+        float travelOffset, popRise;
+
+        // Crystal_* parts grow as it eats (Grow).
+        readonly Transform[] crystals;
+        readonly Vector3[] crystalRest;
+        readonly bool[] drivenCrystal;
+        float grow = 1f, crystalMul = 1f;
+        int growKick;
+
+        // Plate seams (a Seam* glow part on each Plate_*) flare as the plate's threshold comes near.
+        readonly Renderer[] seamRenderer;
+        readonly int[] seamSlot, seamColorId;
+        readonly Color[] seamEmission;
+        readonly float[] plateAt;
+        MaterialPropertyBlock seamBlock;
+        float health01 = 1f, seamShown = 1f;
+        int seamPlate = -1;
 
         // Crumble (every part with a mesh, parents before children)
         readonly Transform[] parts;
@@ -103,6 +140,10 @@ namespace DungeonConveyor
         public Transform Muzzle { get; }
         public int Plates => plates.Length;
         public int PlatesBroken => platesBroken;
+        /// <summary>Broken plates still flying or sinking (they live outside the enemy).</summary>
+        public int PlatesFlying => platesFlying;
+        /// <summary>True while OnEvent is called for an event of the loop (a Walk's Land or Step), not of a one-shot.</summary>
+        public bool InLoopEvent { get; private set; }
 
         /// <summary>
         /// The rig for model if it has rigid parts (any child node with a mesh besides the root), else null. gait: the
@@ -210,8 +251,46 @@ namespace DungeonConveyor
                     break;
                 }
             }
+            // The Body's glow slots (cracks) swell with the Core.
+            var swell = new List<int>();
+            var bodyNode = coreIndex >= 0 ? Find(pop, "Body") : null;
+            var bodyRenderer = bodyNode != null ? bodyNode.GetComponent<MeshRenderer>() : null;
+            if (bodyRenderer != null && bodyRenderer != coreRenderer)
+            {
+                var mats = bodyRenderer.sharedMaterials;
+                for (int m = 0; m < mats.Length; m++)
+                    if (mats[m] != null && mats[m].name.Contains("Glow") && (mats[m].HasProperty(EmissiveFactor) || mats[m].HasProperty(EmissionColor)))
+                        swell.Add(m);
+            }
+            swellRenderers = new Renderer[swell.Count];
+            swellSlots = new int[swell.Count];
+            swellIds = new int[swell.Count];
+            swellEmission = new Color[swell.Count];
+            for (int i = 0; i < swell.Count; i++)
+            {
+                var mat = bodyRenderer.sharedMaterials[swell[i]];
+                swellRenderers[i] = bodyRenderer;
+                swellSlots[i] = swell[i];
+                swellIds[i] = mat.HasProperty(EmissiveFactor) ? EmissiveFactor : EmissionColor;
+                swellEmission[i] = mat.GetColor(swellIds[i]);
+            }
+
             phase = Random.value;
+            loopPrev = phase;
             nextPose = Time.time + Random.value / Mathf.Max(1f, cfg.PoseFps); // spread the steps over frames
+            neutralPhase = NeutralPhase(set[0]);
+            travel = set[0] != null && !flier && !set[0].TimeBased && set[0].HasTravel;
+            if (travel)
+            {
+                float sum = 0f;
+                const int samples = 96;
+                for (int i = 0; i < samples; i++)
+                {
+                    float t = (i + 0.5f) / samples;
+                    sum += set[0].Travel(t) - t;
+                }
+                travelMean = sum / samples;
+            }
 
             parts = new Transform[filters.Length];
             var plateList = new List<int>();
@@ -232,9 +311,56 @@ namespace DungeonConveyor
             partSize = new float[parts.Length];
             partGone = new bool[parts.Length];
 
+            // Crystals (driven or not) for Grow.
+            var crystalList = new List<Transform>();
+            drivenCrystal = new bool[n];
+            for (int i = 0; i < parts.Length; i++)
+                if (parts[i].name.StartsWith("Crystal_", System.StringComparison.Ordinal)) crystalList.Add(parts[i]);
+            for (int i = 0; i < n; i++) drivenCrystal[i] = crystalList.Contains(driven[i]);
+            for (int i = crystalList.Count - 1; i >= 0; i--)
+                if (System.Array.IndexOf(driven, crystalList[i]) >= 0) crystalList.RemoveAt(i); // posed with the clips
+            crystals = crystalList.ToArray();
+            crystalRest = new Vector3[crystals.Length];
+            for (int i = 0; i < crystals.Length; i++) crystalRest[i] = crystals[i].localScale;
+
             plateList.Sort((x, y) => string.CompareOrdinal(parts[x].name, parts[y].name));
             plates = plateList.ToArray();
             int p = plates.Length;
+            // Each plate's seam: a Seam* part under it (or Seam_<n> for Plate_<n> anywhere). It moves with its plate,
+            // so it is not a piece of its own in the crumble.
+            seamRenderer = new Renderer[p];
+            seamSlot = new int[p];
+            seamColorId = new int[p];
+            seamEmission = new Color[p];
+            plateAt = new float[p];
+            for (int i = 0; i < p; i++)
+            {
+                var plate = parts[plates[i]];
+                Transform seam = null;
+                for (int c = 0; c < plate.childCount && seam == null; c++)
+                    if (plate.GetChild(c).name.StartsWith("Seam", System.StringComparison.Ordinal)) seam = plate.GetChild(c);
+                if (seam == null) seam = Find(pop, "Seam_" + plate.name.Substring("Plate_".Length));
+                if (seam == null) continue;
+                if (seam.IsChildOf(plate))
+                    for (int k = 0; k < parts.Length; k++)
+                        if (parts[k] == seam) partGone[k] = true;
+                var sr = seam.GetComponent<MeshRenderer>();
+                if (sr == null) continue;
+                var mats = sr.sharedMaterials;
+                int slot = -1;
+                for (int m = 0; m < mats.Length && slot < 0; m++)
+                    if (mats[m] != null && mats[m].name.Contains("Glow")) slot = m;
+                if (slot < 0 && mats.Length == 1) slot = 0;
+                if (slot < 0 || mats[slot] == null) continue;
+                int id = mats[slot].HasProperty(EmissiveFactor) ? EmissiveFactor : mats[slot].HasProperty(EmissionColor) ? EmissionColor : -1;
+                if (id < 0) continue;
+                seamRenderer[i] = sr;
+                seamSlot[i] = slot;
+                seamColorId[i] = id;
+                seamEmission[i] = mats[slot].GetColor(id);
+            }
+            var at = cfg.PlateBreakAt;
+            for (int i = 0; i < p; i++) plateAt[i] = PlateThreshold(i, p, at);
             plateStart = new float[p];
             plateFrom = new Vector3[p];
             plateVel = new Vector3[p];
@@ -246,6 +372,57 @@ namespace DungeonConveyor
             for (int i = 0; i < p; i++) plateStart[i] = -1f;
 
             if (n > 0) ApplyPose();
+        }
+
+        /// <summary>The phase of the loop key closest to rest (smallest deltas over all tracks, each track normalised).</summary>
+        static float NeutralPhase(EnemyGait loop)
+        {
+            if (loop == null || loop.Keys == 0) return 0f;
+            int keys = loop.Keys, best = 0;
+            var score = new float[keys];
+            foreach (var tr in loop.Tracks)
+            {
+                if (tr == null) continue;
+                float pMax = 0f, rMax = 0f, sMax = 0f;
+                for (int k = 0; k < keys; k++)
+                {
+                    pMax = Mathf.Max(pMax, Key(tr.Position, k, Vector3.zero).magnitude);
+                    rMax = Mathf.Max(rMax, Quaternion.Angle(Quaternion.identity, Key(tr.Rotation, k)));
+                    sMax = Mathf.Max(sMax, (Key(tr.Scale, k, Vector3.one) - Vector3.one).magnitude);
+                }
+                for (int k = 0; k < keys; k++)
+                {
+                    if (pMax > 1e-5f) score[k] += Key(tr.Position, k, Vector3.zero).magnitude / pMax;
+                    if (rMax > 0.01f) score[k] += Quaternion.Angle(Quaternion.identity, Key(tr.Rotation, k)) / rMax;
+                    if (sMax > 1e-5f) score[k] += (Key(tr.Scale, k, Vector3.one) - Vector3.one).magnitude / sMax;
+                }
+            }
+            for (int k = 1; k < keys; k++)
+                if (score[k] < score[best]) best = k;
+            return loop.KeyTimes[best];
+        }
+
+        /// <summary>The health fraction at which plate i of count breaks off (BreakPlates spreads them over at).</summary>
+        static float PlateThreshold(int i, int count, float[] at)
+        {
+            if (at == null || at.Length == 0) return -1f;
+            for (int j = 0; j < at.Length; j++)
+            {
+                int due = j + 1;
+                int target = due >= at.Length ? count : Mathf.RoundToInt(count * due / (float)at.Length);
+                if (target > i) return at[j];
+            }
+            return at[at.Length - 1];
+        }
+
+        /// <summary>Index of the key a clip shows at phase t (0-1).</summary>
+        static int KeyAt(EnemyGait clip, float t)
+        {
+            var times = clip.KeyTimes;
+            int k = 0;
+            for (int i = 0; i < times.Length; i++)
+                if (times[i] <= t) k = i;
+            return k;
         }
 
         static Transform Find(Transform root, string name)
@@ -292,18 +469,73 @@ namespace DungeonConveyor
             playStart = Time.time;
             playPrev = -1e-4f; // an event at 0 fires on the first tick
             playPhase = 0f;
+            released = false;
+            finishAt = -1f;
+            blendNext = true; // one in-between pose on the way in
             nextPose = 0f; // show it right away
             return until;
         }
 
-        /// <summary>Stops the one-shot (back to the loop on the next pose step).</summary>
+        /// <summary>
+        /// Stops the one-shot (back to the loop on the next pose step, through one in-between pose). The walk resumes
+        /// at its most neutral key, so the recovery leads into a matching pose instead of a random mid-stride one.
+        /// </summary>
         public void Stop()
         {
             if (playing < 0) return;
             playing = -1;
             playSerial++;
+            released = false;
+            finishAt = -1f;
+            blendNext = true;
+            if (set[0] != null && !flier)
+            {
+                phase = Mathf.Floor(phase) + neutralPhase;
+                loopPrev = phase;
+            }
             nextPose = 0f;
         }
+
+        /// <summary>
+        /// The enemy walks on while the playing clip finishes: its limbs go back to the walk (no frozen legs sliding),
+        /// a one-shot plays out on the rest, and a looping clip (Chew) finishes its current cycle and stops.
+        /// </summary>
+        public void Release()
+        {
+            if (playing < 0 || released) return;
+            released = true;
+            var c = set[playing];
+            if (c.Loop) finishAt = Mathf.Floor(Mathf.Max(0f, playPrev)) + 1f;
+            blendNext = true;
+            nextPose = 0f;
+        }
+
+        /// <summary>Shows the pose at this moment (e.g. the impact pose a leaving slammer holds) right away.</summary>
+        public void PoseNow()
+        {
+            if (dieTime >= 0f || driven.Length == 0) return;
+            blendNext = false;
+            ApplyPose();
+            lastStep = Time.time;
+        }
+
+        /// <summary>
+        /// The Crystal_* parts grow a step (RigSettings.CrystalGrowStep, up to CrystalGrowMax), popping a little past
+        /// it first. Returns whether they grew.
+        /// </summary>
+        public bool Grow()
+        {
+            if (crystals.Length == 0 && System.Array.IndexOf(drivenCrystal, true) < 0) return false;
+            float next = Mathf.Min(Mathf.Max(1f, cfg.CrystalGrowMax), grow + Mathf.Max(0f, cfg.CrystalGrowStep));
+            if (next <= grow + 1e-4f) return false;
+            grow = next;
+            growKick = 2;
+            nextPose = 0f;
+            return true;
+        }
+
+        /// <summary>The enemy's health (0-1): the next plate's seam flares as its threshold comes near.</summary>
+        public void SetHealth(float value) => health01 = value;
 
         /// <summary>Hides the model until the pop starts at time `at` (Time.time), then pops it out.</summary>
         public void BeginPop(float at)
@@ -314,15 +546,19 @@ namespace DungeonConveyor
         }
 
         /// <summary>A hit: the next pose step is squashed.</summary>
-        public void Hit() => hitPose = 1f;
+        public void Hit()
+        {
+            hitPose = 1f;
+            nextPose = Mathf.Min(nextPose, lastStep + 1f / Mathf.Max(1f, cfg.PoseFps));
+        }
 
         /// <summary>
         /// Every frame while it is alive: walked = world distance covered this frame, dt = frame time (the Fly loop and
         /// the one-shots run on time).
         /// </summary>
-        public void Tick(float walked, float dt = 0f)
+        public bool Tick(float walked, float dt = 0f)
         {
-            if (dieTime >= 0f) return;
+            if (dieTime >= 0f) return false;
             var loop = set[0];
             if (loop != null)
             {
@@ -333,15 +569,63 @@ namespace DungeonConveyor
                     float stride = loop.StrideLength * Mathf.Max(0.05f, cfg.StrideScale) * model.lossyScale.x;
                     phase += walked / Mathf.Max(0.001f, stride);
                 }
-                if (phase > 1000f) phase -= 1000f;
+                if (phase > 1000f) { phase -= 1000f; loopPrev -= 1000f; }
             }
             float now = Time.time;
             if (playing >= 0) AdvanceClip(now);
-            if (now < nextPose) return;
-            float step = 1f / Mathf.Max(1f, cfg.PoseFps);
-            nextPose = now - nextPose > step ? now + step : nextPose + step;
+            if (travel) ApplyTravel(); // every frame: the surge is travel, not a pose
+
+            // On keys, a walk steps as its phase (or the playing clip's) crosses a key, at most PoseFpsMax per second,
+            // and at least PoseFpsMin (PoseFps while popping out); otherwise every walk steps at PoseFps.
+            bool onKeys = cfg.PoseOnKeys && loop != null && !flier && !loop.TimeBased;
+            bool due = now >= nextPose;
+            if (!due && onKeys && now - lastStep >= 1f / Mathf.Max(1f, cfg.PoseFpsMax))
+                due = KeyAt(loop, phase - Mathf.Floor(phase)) != loopKeyShown
+                      || (playing >= 0 && KeyAt(set[playing], playPhase) != clipKeyShown);
+            if (!due) return false;
+            if (onKeys)
+                nextPose = now + 1f / Mathf.Max(1f, popStart >= 0f || hitPose > 0f ? cfg.PoseFps : Mathf.Min(cfg.PoseFps, cfg.PoseFpsMin));
+            else
+            {
+                float step = 1f / Mathf.Max(1f, cfg.PoseFps);
+                nextPose = now - nextPose > step ? now + step : nextPose + step;
+            }
+            lastStep = now;
+            if (loop != null) FireLoopEvents(loop);
+            if (dieTime >= 0f) return false; // gone from a callback
             ApplyPose();
             TickPlates(now);
+            return true;
+        }
+
+        /// <summary>Fires the loop's events its phase passed since the last pose step (in step with the pose shown).</summary>
+        void FireLoopEvents(EnemyGait loop)
+        {
+            float prev = loopPrev, end = phase;
+            loopPrev = phase;
+            var events = loop.Events;
+            if (events == null || events.Length == 0 || OnEvent == null || end <= prev || end - prev > 4f) return;
+            int serial = playSerial;
+            for (int k = Mathf.FloorToInt(prev); k <= Mathf.FloorToInt(end); k++)
+                for (int i = 0; i < events.Length; i++)
+                {
+                    if (events[i] == null) continue;
+                    float at = k + events[i].Time;
+                    if (at <= prev || at > end) continue;
+                    InLoopEvent = true;
+                    OnEvent(events[i].Name);
+                    InLoopEvent = false;
+                    if (serial != playSerial) return; // a clip started or stopped from the callback
+                }
+        }
+
+        /// <summary>A walk with a TravelCurve: the body leads or trails steady travel by the curve (pop node, along +Z).</summary>
+        void ApplyTravel()
+        {
+            var loop = set[0];
+            float t = phase - Mathf.Floor(phase);
+            travelOffset = (loop.Travel(t) - t - travelMean) * loop.StrideLength * Mathf.Max(0.05f, cfg.StrideScale);
+            if (popStart < 0f) pop.localPosition = popRestPos + new Vector3(0f, popRise, travelOffset);
         }
 
         /// <summary>Moves the one-shot on and fires the events it passed.</summary>
@@ -349,6 +633,7 @@ namespace DungeonConveyor
         {
             var c = set[playing];
             float u = (now - playStart) * playRate * c.Rate; // in cycles
+            if (finishAt > 0f) u = Mathf.Min(u, finishAt); // a released loop ends on its cycle
             int serial = playSerial;
             float prev = playPrev;
             float end = c.Loop ? u : Mathf.Min(u, 1f);
@@ -367,7 +652,7 @@ namespace DungeonConveyor
                         if (serial != playSerial) return; // stopped or restarted from the callback
                     }
             }
-            if (!c.Loop && u >= 1f)
+            if ((!c.Loop && u >= 1f) || (finishAt > 0f && u >= finishAt))
             {
                 Stop();
                 OnEvent?.Invoke(EndEvent);
@@ -403,16 +688,30 @@ namespace DungeonConveyor
                 hitPose = 0f;
             }
             pop.localScale = Vector3.Scale(popRestScale, s);
-            pop.localPosition = popRestPos + Vector3.up * rise;
+            popRise = rise;
+            pop.localPosition = popRestPos + new Vector3(0f, rise, popStart >= 0f ? 0f : travelOffset);
+
+            // Crystals that grew pop a little past their new size for two steps.
+            crystalMul = grow * (growKick == 2 ? 1.12f : growKick == 1 ? 1.04f : 1f);
+            if (growKick > 0) growKick--;
+            for (int i = 0; i < crystals.Length; i++)
+                if (crystals[i] != null) crystals[i].localScale = crystalRest[i] * crystalMul;
+            if (plates.Length > 0) GlowSeam();
 
             int n = driven.Length;
             if (n == 0) return;
+            blending = blendNext;
+            blendNext = false;
             // Each part: the one-shot if it has keys for it, else the loop (at the current phase), else its rest.
             float loopT = phase - Mathf.Floor(phase);
+            loopKeyShown = set[0] != null ? KeyAt(set[0], loopT) : -1;
+            clipKeyShown = playing >= 0 ? KeyAt(set[playing], playPhase) : -1;
             for (int d = 0; d < n; d++)
             {
                 if (drivenGone[d]) continue;
                 int track = playing >= 0 ? trackOf[playing * n + d] : -1;
+                // Released (walking again): the limbs walk, the rest plays the clip out.
+                if (track >= 0 && released && drivenKind[d] == KindLimb && set[0] != null && trackOf[d] >= 0) track = -1;
                 if (track >= 0)
                 {
                     // One-shots play as keyed (times ActionAmplitude) unless the clip overrides its amplitudes.
@@ -431,11 +730,57 @@ namespace DungeonConveyor
                         drivenKind[d] == KindBody ? (c.Raw ? 1f : Or(c.BodySquash, cfg.BodySquash)) : 1f);
                     continue;
                 }
-                driven[d].localPosition = drivenPos[d];
-                driven[d].localRotation = drivenRot[d];
-                driven[d].localScale = drivenScale[d];
+                Set(d, drivenPos[d], drivenRot[d], drivenCrystal[d] ? drivenScale[d] * crystalMul : drivenScale[d]);
             }
+            blending = false;
             if (coreIndex >= 0) GlowCore();
+        }
+
+        /// <summary>Puts part d in a pose, or halfway there from what it shows on a blend step.</summary>
+        void Set(int d, Vector3 position, Quaternion rotation, Vector3 scale)
+        {
+            var part = driven[d];
+            if (blending)
+            {
+                position = Vector3.LerpUnclamped(part.localPosition, position, 0.5f);
+                rotation = Quaternion.Slerp(part.localRotation, rotation, 0.5f);
+                scale = Vector3.LerpUnclamped(part.localScale, scale, 0.5f);
+            }
+            part.localPosition = position;
+            part.localRotation = rotation;
+            part.localScale = scale;
+        }
+
+        /// <summary>The next plate's seam flares (and flickers) as health comes within SeamWarnBand of its threshold.</summary>
+        void GlowSeam()
+        {
+            int next = platesBroken < plates.Length && seamRenderer[platesBroken] != null ? platesBroken : -1;
+            float k = 1f;
+            if (next >= 0 && plateAt[next] >= 0f && dieTime < 0f)
+            {
+                float band = Mathf.Max(0.001f, cfg.SeamWarnBand);
+                float close = 1f - Mathf.Clamp01((health01 - plateAt[next]) / band);
+                if (close > 0f) k = 1f + (Mathf.Max(1f, cfg.SeamFlare) - 1f) * close * (0.8f + 0.2f * Mathf.Sin(Time.time * 18f));
+            }
+            if (next != seamPlate && seamPlate >= 0 && seamShown != 1f)
+            {
+                // The flared seam broke off (or died): back to its own glow.
+                if (seamRenderer[seamPlate] != null) seamRenderer[seamPlate].SetPropertyBlock(null, seamSlot[seamPlate]);
+                seamShown = 1f;
+            }
+            seamPlate = next;
+            if (next < 0 || Mathf.Abs(k - seamShown) < 0.01f) return;
+            seamShown = k;
+            var r = seamRenderer[next];
+            if (k == 1f)
+            {
+                r.SetPropertyBlock(null, seamSlot[next]);
+                return;
+            }
+            if (seamBlock == null) seamBlock = new MaterialPropertyBlock();
+            var e = seamEmission[next];
+            seamBlock.SetColor(seamColorId[next], new Color(e.r * k, e.g * k, e.b * k, e.a));
+            r.SetPropertyBlock(seamBlock, seamSlot[next]);
         }
 
         static float Or(float value, float fallback) => value >= 0f ? value : fallback;
@@ -463,12 +808,24 @@ namespace DungeonConveyor
             if (!bright)
             {
                 coreRenderer.SetPropertyBlock(null, coreSlot);
+                for (int i = 0; i < swellRenderers.Length; i++) swellRenderers[i].SetPropertyBlock(null, swellSlots[i]);
                 return;
             }
             if (coreBlock == null) coreBlock = new MaterialPropertyBlock();
-            float k = Mathf.Clamp(f * f, 0.2f, 4f);
+            // Linear in the swell and capped (scale squared clipped the orange toward yellow at the Lob hold).
+            float k = Mathf.Clamp(f, 0.2f, Mathf.Max(1f, cfg.CoreGlowMax));
             coreBlock.SetColor(coreColorId, new Color(coreEmission.r * k, coreEmission.g * k, coreEmission.b * k, coreEmission.a));
             coreRenderer.SetPropertyBlock(coreBlock, coreSlot);
+            // The body's cracks pulse with it (a little stronger, so the swell reads past the core itself).
+            float kb = Mathf.Clamp(1f + (k - 1f) * 1.5f, 0.2f, 1f + (Mathf.Max(1f, cfg.CoreGlowMax) - 1f) * 1.5f);
+            for (int i = 0; i < swellRenderers.Length; i++)
+            {
+                var e = swellEmission[i];
+                coreBlock.Clear();
+                coreBlock.SetColor(swellIds[i], new Color(e.r * kb, e.g * kb, e.b * kb, e.a));
+                swellRenderers[i].SetPropertyBlock(coreBlock, swellSlots[i]);
+            }
+            if (swellRenderers.Length > 0) coreBlock.Clear();
         }
 
         /// <summary>Poses part d from one track at phase t (keys interpolated, or held with Interpolate off).</summary>
@@ -500,16 +857,17 @@ namespace DungeonConveyor
             var dr = Quaternion.Slerp(Key(tr.Rotation, i0), Key(tr.Rotation, i1), w);
             var ds = Vector3.LerpUnclamped(Key(tr.Scale, i0, Vector3.one), Key(tr.Scale, i1, Vector3.one), w);
             if (squash != 1f) ds = Vector3.LerpUnclamped(Vector3.one, ds, squash);
-            var part = driven[d];
-            part.localPosition = drivenPos[d] + dp;
+            Quaternion rotation;
             if (clip.AbsoluteRotation)
-                part.localRotation = amp != 1f ? Quaternion.SlerpUnclamped(drivenRot[d], dr, amp) : dr;
+                rotation = amp != 1f ? Quaternion.SlerpUnclamped(drivenRot[d], dr, amp) : dr;
             else
             {
                 if (amp != 1f) dr = Quaternion.SlerpUnclamped(Quaternion.identity, dr, amp);
-                part.localRotation = drivenRot[d] * dr;
+                rotation = drivenRot[d] * dr;
             }
-            part.localScale = Vector3.Scale(drivenScale[d], ds);
+            var scale = Vector3.Scale(drivenScale[d], ds);
+            if (drivenCrystal[d]) scale *= crystalMul;
+            Set(d, drivenPos[d] + dp, rotation, scale);
         }
 
         static Vector3 Key(Vector3[] keys, int i, Vector3 fallback) => keys != null && keys.Length > 0 ? keys[Mathf.Min(i, keys.Length - 1)] : fallback;
@@ -601,6 +959,15 @@ namespace DungeonConveyor
             }
         }
 
+        /// <summary>After the crumble: moves on the plates still flying (the boss stays until they have landed).</summary>
+        public void TickDebris()
+        {
+            float now = Time.time;
+            if (platesFlying == 0 || now < nextPose) return;
+            nextPose = now + 1f / Mathf.Max(1f, cfg.PoseFps);
+            TickPlates(now);
+        }
+
         /// <summary>The enemy is gone: removes plates still flying (they live outside it).</summary>
         public void Dispose()
         {
@@ -625,7 +992,16 @@ namespace DungeonConveyor
             nextPose = 0f;
             popStart = -1f;
             playing = -1;
-            if (coreBright && coreRenderer != null) { coreRenderer.SetPropertyBlock(null, coreSlot); coreBright = false; }
+            if (coreBright && coreRenderer != null)
+            {
+                coreRenderer.SetPropertyBlock(null, coreSlot);
+                for (int i = 0; i < swellRenderers.Length; i++)
+                    if (swellRenderers[i] != null) swellRenderers[i].SetPropertyBlock(null, swellSlots[i]);
+                coreBright = false;
+            }
+            if (seamPlate >= 0 && seamRenderer[seamPlate] != null) seamRenderer[seamPlate].SetPropertyBlock(null, seamSlot[seamPlate]);
+            seamPlate = -1;
+            seamShown = 1f;
             pop.localScale = popRestScale;
             pop.localPosition = popRestPos;
             // One flat list of pieces: a child must not move with its parent on top of its own flight.

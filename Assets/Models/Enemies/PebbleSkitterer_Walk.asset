@@ -12,9 +12,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f04ef648993f0fd4ca85096d9301fbb8, type: 3}
   m_Name: PebbleSkitterer_Walk
   m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.EnemyGait
+  Action: 
   Frames: 12
   SourceFps: 24
+  Loop: 1
   StrideLength: 0.6
+  TimeBased: 0
+  CyclesPerSecond: 0
+  AbsoluteRotation: 0
+  BodyBounce: -1
+  BodySquash: -1
+  LegSwing: 1.6
+  Raw: 0
+  TravelCurve: []
   KeyTimes:
   - 0
   - 0.16666667
@@ -177,3 +187,4 @@ MonoBehaviour:
     - {x: 1, y: 1, z: 1}
     - {x: 1, y: 1, z: 1}
     - {x: 1, y: 1, z: 1}
+  Events: []

@@ -16,8 +16,20 @@ namespace DungeonConveyor
     {
         public static readonly List<Enemy> All = new List<Enemy>();
 
+        /// <summary>
+        /// Footstep hook: a walk's loop events (Land, Step) on an enemy on screen, throttled over all enemies
+        /// (RigSettings.LoopEventsPerSecond). Nothing plays a sound on it yet; an Sfx can subscribe.
+        /// </summary>
+        public static System.Action<Enemy, string> OnLoopEvent;
+        static float loopTokens, loopTokenTime;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() => All.Clear();
+        static void ResetStatics()
+        {
+            All.Clear();
+            OnLoopEvent = null;
+            loopTokens = loopTokenTime = 0f;
+        }
 
         /// <summary>Seconds a meteor takes from the edge of space to the ground.</summary>
         public const float FallTime = 1.6f;
@@ -92,6 +104,7 @@ namespace DungeonConveyor
         GameObject model;
         Material spriteMaterial;
         Vector3 lastGround, flyFacing; // flyFacing: a flier's eased heading
+        Vector3 walkFacing, shownFacing; // a walker's eased heading, and the one shown (on the pose steps)
         bool hasLastGround;
         float hatchHold, jitter = 1f, frameDt, turnRate, bank;
 
@@ -461,8 +474,46 @@ namespace DungeonConveyor
 
         void OnRigEvent(string name)
         {
+            if (rig != null && rig.InLoopEvent)
+            {
+                LoopEvent(name);
+                return;
+            }
+            // It grows its crystals as it eats.
+            if (name == "Bite" && attack == Attack.Chew) rig.Grow();
             if (attack == Attack.None || attackResolved) return;
             if (name == attackEvent || name == EnemyRig.EndEvent) attackEventHit = true;
+        }
+
+        /// <summary>
+        /// A walk's loop event (Land, Step): on screen and within the shared budget, a dust puff on Land and the
+        /// footstep hook (OnLoopEvent).
+        /// </summary>
+        void LoopEvent(string name)
+        {
+            var cfg = EnemyRig.Settings;
+            float rate = cfg.LoopEventsPerSecond;
+            if (rate <= 0f || !OnScreen()) return;
+            float now = Time.time;
+            loopTokens = Mathf.Min(Mathf.Max(1f, rate * 0.1f), loopTokens + (now - loopTokenTime) * rate);
+            loopTokenTime = now;
+            if (loopTokens < 1f) return;
+            loopTokens -= 1f;
+            if (name == "Land" && cfg.LandDust)
+            {
+                var up = GroundPos.normalized;
+                float r = modelRadius * body.localScale.x;
+                Fx.Spawn(GroundPos + up * (ConveyorArt.SurfaceHeight + 0.03f), new Color(0.62f, 0.57f, 0.5f, 0.5f), r * 0.5f, r * 1.3f, 0.3f, up * 0.15f);
+            }
+            OnLoopEvent?.Invoke(this, name);
+        }
+
+        bool OnScreen()
+        {
+            if (cam == null) cam = Camera.main;
+            if (cam == null) return false;
+            var v = cam.WorldToViewportPoint(transform.position);
+            return v.z > 0f && v.x > -0.05f && v.x < 1.05f && v.y > -0.05f && v.y < 1.05f;
         }
 
         /// <summary>While attacking: stands, plays the clip, and lands the gameplay on its event (at the latest in time).</summary>
@@ -649,6 +700,18 @@ namespace DungeonConveyor
                     }
                     rotation = Quaternion.LookRotation(flyFacing, up) * Quaternion.Euler(0f, 0f, bank);
                 }
+                else if (rig != null && EnemyRig.Settings.WalkTurnResponse > 0f)
+                {
+                    // Walkers ease round too (no 60-degree pops at cell borders), shown on the pose steps (on twos).
+                    walkFacing = Vector3.ProjectOnPlane(walkFacing, up);
+                    if (walkFacing.sqrMagnitude < 1e-6f) walkFacing = facing;
+                    walkFacing.Normalize();
+                    if (frameDt > 0f)
+                        walkFacing = Vector3.Slerp(walkFacing, facing, 1f - Mathf.Exp(-EnemyRig.Settings.WalkTurnResponse * frameDt)).normalized;
+                    shownFacing = Vector3.ProjectOnPlane(shownFacing, up);
+                    if (shownFacing.sqrMagnitude < 1e-6f) shownFacing = walkFacing;
+                    rotation = Quaternion.LookRotation(shownFacing.normalized, up);
+                }
                 body.rotation = rotation;
             }
             if (rig != null)
@@ -656,7 +719,12 @@ namespace DungeonConveyor
                 float walked = hasLastGround ? Vector3.Distance(GroundPos, lastGround) : 0f;
                 lastGround = GroundPos;
                 hasLastGround = true;
-                rig.Tick(walked, frameDt);
+                rig.SetHealth(Health / MaxHealth);
+                if (rig.Tick(walked, frameDt) && !IsFlying && walkFacing.sqrMagnitude > 1e-6f && EnemyRig.Settings.WalkTurnResponse > 0f)
+                {
+                    shownFacing = walkFacing;
+                    body.rotation = Quaternion.LookRotation(Vector3.ProjectOnPlane(shownFacing, up).normalized, up);
+                }
             }
             frameDt = 0f; // time only counts once per Step
 
@@ -792,6 +860,17 @@ namespace DungeonConveyor
             float k = (Time.time - dieTime) / (rig != null ? rig.CrumbleSeconds : look.DeathSeconds);
             if (k >= 1f)
             {
+                // A boss stays (its body gone) until the plates it lost have landed: they go with it.
+                if (rig != null && rig.PlatesFlying > 0)
+                {
+                    if (body.gameObject.activeSelf)
+                    {
+                        body.gameObject.SetActive(false);
+                        look.Crumble(1f, GroundPos, GroundPos.normalized, facing, dieScale.x);
+                    }
+                    rig.TickDebris();
+                    return;
+                }
                 Destroy(gameObject);
                 return;
             }
