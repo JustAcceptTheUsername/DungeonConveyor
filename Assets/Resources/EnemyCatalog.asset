@@ -13,11 +13,135 @@ MonoBehaviour:
   m_Name: EnemyCatalog
   m_EditorClassIdentifier: Assembly-CSharp::DungeonConveyor.EnemyCatalog
   YawOffset: 0
+  EnemyFeedback: 1
+  Feedback:
+    InkColor: {r: 0.106, g: 0.063, b: 0.125, a: 1}
+    InkWidth: 0.018
+    InkMinPixels: 1.5
+    FlashSeconds: 0.08
+    FlashStrength: 1
+    FlashEmission: 1
+    ChipsPerHit: 3
+    CrackAt: {x: 0.66, y: 0.33}
+    CrackScale: 3.5
+    StatusStrength: 1.3
+    DeathSeconds: 0.6
+    ShadowAlpha: 0.6
+    ShadowSize: 1.1
+    ShadowOffset: 0.1
+    ScaleJitter: 0.06
+    BobJitter: 0.15
+    BarHeight: 0.09
+    BarFull: {r: 0.36, g: 1, b: 0.36, a: 1}
+    BarHalf: {r: 1, g: 0.9, b: 0.22, a: 1}
+    BarLow: {r: 1, g: 0.27, b: 0.2, a: 1}
+    BarMargin: 0.1
+  RigAnimation: 1
+  Rig:
+    PoseFps: 12
+    PoseOnKeys: 1
+    PoseFpsMax: 24
+    PoseFpsMin: 8
+    Interpolate: 1
+    StrideScale: 1
+    BodyBounce: 1.8
+    BodySquash: 2.2
+    LegSwing: 1.25
+    MeteorShell: {fileID: 480147433252618104, guid: 019f3a32bfee38348b8969e0c63fe4d1, type: 3}
+    ShellSize: 1.5
+    ShellMaxHeight: 1.4
+    CrackFlashMax: 0.6
+    CrackAt: 0.15
+    PopSeconds: 0.35
+    HatchHold: 0.35
+    ShellSeconds: 1
+    CrumbleSeconds: 0.8
+    CrumbleImpulse: 0.55
+    CrumbleSpin: 540
+    CrumbleGravity: 9
+    ActionSpeed: 1
+    ActionAmplitude: 1
+    FlapRate: 1
+    FlyTurnResponse: 6
+    BankMax: 12
+    BankPerTurn: 0.06
+    BankResponse: 7
+    WalkTurnResponse: 10
+    LoopEventsPerSecond: 40
+    LandDust: 1
+    CoreGlowMax: 1.8
+    CrystalGrowStep: 0.05
+    CrystalGrowMax: 1.3
+    ChewDwell: 0.5
+    LobDwell: 0.6
+    LobRange: 2
+    LobFlight: 0.45
+    LobArc: 0.45
+    LobMuzzle: {x: 0, y: 0.35, z: 0.25}
+    SlamDwell: 0.6
+    ImpactHoldSteps: 3
+    ImpactShrinkSeconds: 0.15
+    LobRing: 1
+    LobRingRadius: 0.42
+    PlateBreakAt:
+    - 0.8
+    - 0.6
+    - 0.4
+    - 0.2
+    PlateSeconds: 1
+    PlateImpulse: 1.6
+    SeamWarnBand: 0.08
+    SeamFlare: 6.9
+    SeamRestGlow: 0.1
+    EnrageHold: 1
+  Palette:
+    Compensate: 1
+    Elements:
+    - Element: 1
+      Colors:
+      - Role: 2
+        Color: {r: 1, g: 0.3529412, b: 0.12156863, a: 1}
+      - Role: 3
+        Color: {r: 1, g: 0.6901961, b: 0.2901961, a: 1}
+      - Role: 4
+        Color: {r: 0.72156864, g: 0.1882353, b: 0.047058824, a: 1}
+      - Role: 7
+        Color: {r: 1, g: 0.47843137, b: 0.101960786, a: 1}
+    - Element: 2
+      Colors:
+      - Role: 2
+        Color: {r: 1, g: 0.9411765, b: 0.41568628, a: 1}
+      - Role: 3
+        Color: {r: 1, g: 0.9843137, b: 0.8392157, a: 1}
+      - Role: 4
+        Color: {r: 0.84705883, g: 0.7058824, b: 0, a: 1}
+      - Role: 7
+        Color: {r: 1, g: 0.96862745, b: 0.627451, a: 1}
+    - Element: 3
+      Colors:
+      - Role: 2
+        Color: {r: 0.49803922, g: 0.84705883, b: 1, a: 1}
+      - Role: 3
+        Color: {r: 0.84705883, g: 0.95686275, b: 1, a: 1}
+      - Role: 4
+        Color: {r: 0.23529412, g: 0.56078434, b: 0.84705883, a: 1}
+      - Role: 7
+        Color: {r: 0.56078434, g: 0.9019608, b: 1, a: 1}
+    - Element: 4
+      Colors:
+      - Role: 2
+        Color: {r: 0.4862745, g: 1, b: 0.22745098, a: 1}
+      - Role: 3
+        Color: {r: 0.78431374, g: 1, b: 0.5411765, a: 1}
+      - Role: 4
+        Color: {r: 0.24313726, g: 0.61960787, b: 0.10980392, a: 1}
+      - Role: 7
+        Color: {r: 0.54901963, g: 1, b: 0.18039216, a: 1}
   Entries:
   - Id: Crawler
-    Name: Crawler
-    Model: {fileID: 8253726439795505618, guid: ee776b0e0cf4da046b53db6a1213bb28, type: 3}
-    Scale: 0.6
+    Name: Pebble Skitterer
+    Model: {fileID: 8213727283131406042, guid: cf2b4c935949e8949913ef5be9c3563f, type: 3}
+    Scale: 1.2
     Health: 40
     Speed: 1.5
     CoreDamage: 10
@@ -26,10 +150,17 @@ MonoBehaviour:
     Weight: 4
     Hover: 0
     Traits: 1
+    Gait: {fileID: 11400000, guid: ef8daf2f1438e1449aba51ed4f8054e9, type: 2}
+    Clips: []
+    BossModel: {fileID: 0}
+    BossGait: {fileID: 0}
+    BossClips: []
+    Palette: {fileID: 11400000, guid: 107414caf7f4d1e4f8a7e9acba63f11f, type: 2}
+    BossPalette: {fileID: 0}
   - Id: CrystalSpider
-    Name: Crystal Spider
-    Model: {fileID: 2174832299153047374, guid: a827ecd0dc9427043ae1db5f9279eeac, type: 3}
-    Scale: 0.6
+    Name: Ore-eater
+    Model: {fileID: 3254517452895515522, guid: dbc2c061035fcc1408c04b9eeff81b81, type: 3}
+    Scale: 1
     Health: 75
     Speed: 1.25
     CoreDamage: 15
@@ -38,22 +169,38 @@ MonoBehaviour:
     Weight: 3
     Hover: 0
     Traits: 8
+    Gait: {fileID: 11400000, guid: c47cbdc73778aa64296fbfd53af09dd6, type: 2}
+    Clips:
+    - {fileID: 11400000, guid: 0923bdc66fc2bc64bb7f09c6bee408ad, type: 2}
+    BossModel: {fileID: 0}
+    BossGait: {fileID: 0}
+    BossClips: []
+    Palette: {fileID: 11400000, guid: 1301b8e5ebeb00a42b9c11fba1ee2825, type: 2}
+    BossPalette: {fileID: 0}
   - Id: Wasp
-    Name: Wasp
-    Model: {fileID: 895827133793382441, guid: 1dcb7811228554e409a8318b8767bd36, type: 3}
-    Scale: 0.6
+    Name: Rock Bat
+    Model: {fileID: 7265235581013586688, guid: 7d4afa02a0c8e1045bc41899c6273d92, type: 3}
+    Scale: 1.15
     Health: 32
     Speed: 2.3
     CoreDamage: 8
     Bounty: 4
     FirstWave: 4
     Weight: 2
-    Hover: 0.35
+    Hover: 0.1
     Traits: 4
+    Gait: {fileID: 11400000, guid: 33c4bac2c3f04ae4ca71229f91b438ee, type: 2}
+    Clips:
+    - {fileID: 11400000, guid: 7d1786570d33cd045bfbd265d45a8786, type: 2}
+    BossModel: {fileID: 0}
+    BossGait: {fileID: 0}
+    BossClips: []
+    Palette: {fileID: 11400000, guid: d17ab1eb3d429a84fa432b333549da68, type: 2}
+    BossPalette: {fileID: 0}
   - Id: AcidSpitter
-    Name: Acid Spitter
-    Model: {fileID: 3610252699757839455, guid: 7e62bffd9e92c0742a0a9635227d9d6a, type: 3}
-    Scale: 0.6
+    Name: Magma Spitter
+    Model: {fileID: 793437179945401501, guid: 6d1d045f3a3aa394cab231eb7d371465, type: 3}
+    Scale: 0.95
     Health: 150
     Speed: 0.95
     CoreDamage: 30
@@ -62,10 +209,18 @@ MonoBehaviour:
     Weight: 1.5
     Hover: 0
     Traits: 8
+    Gait: {fileID: 11400000, guid: a5b92e7defdd63b49b827680179d66dd, type: 2}
+    Clips:
+    - {fileID: 11400000, guid: f10b5e3d28a4683458008afb97433a30, type: 2}
+    BossModel: {fileID: 0}
+    BossGait: {fileID: 0}
+    BossClips: []
+    Palette: {fileID: 11400000, guid: b52c33d7be6957d4f8fee0a400d5d04a, type: 2}
+    BossPalette: {fileID: 0}
   - Id: Brute
-    Name: Brute
-    Model: {fileID: 1129826029265878889, guid: b9163f07339881241aa510b5e1c15fb3, type: 3}
-    Scale: 0.8
+    Name: Ore Golem
+    Model: {fileID: 1758385604813967037, guid: b85f57af2ba4ff54abfab69e93d888cd, type: 3}
+    Scale: 1.2
     Health: 480
     Speed: 0.7
     CoreDamage: 90
@@ -74,3 +229,13 @@ MonoBehaviour:
     Weight: 0.6
     Hover: 0
     Traits: 2
+    Gait: {fileID: 11400000, guid: 8a26d9c78f7247946840994a724c8111, type: 2}
+    Clips:
+    - {fileID: 11400000, guid: 0358caf618efc6948ba2bf282a2506e5, type: 2}
+    BossModel: {fileID: 7735461428896641223, guid: 8bd4180ddd2e4b742ad25045887a07b8, type: 3}
+    BossGait: {fileID: 11400000, guid: 5382a66bd903e594aa280c96462def16, type: 2}
+    BossClips:
+    - {fileID: 11400000, guid: 65e7be0035ac0c64291b905c96ee695b, type: 2}
+    - {fileID: 11400000, guid: a62f607c434e19a4c90b05b127ec542f, type: 2}
+    Palette: {fileID: 11400000, guid: c6336194c9a738f48b89abff86bc81e1, type: 2}
+    BossPalette: {fileID: 11400000, guid: 9837679b515d9c6458c007c58e828398, type: 2}

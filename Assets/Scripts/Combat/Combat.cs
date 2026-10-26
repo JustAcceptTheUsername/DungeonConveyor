@@ -99,7 +99,7 @@ namespace DungeonConveyor
             {
                 var e = Enemy.All[i];
                 float dot = e.TickEffects(dt);
-                if (dot > 0f) Hit(e, dot, AttackKind.None, null);
+                if (dot > 0f) Hit(e, dot, AttackKind.None, null, quiet: true);
             }
             CleanupDead();
 
@@ -493,8 +493,8 @@ namespace DungeonConveyor
             Hit(next, damage * ConductionOn(next), AttackKind.None, source);
         }
 
-        /// <summary>One hit, after armor and synergies; credits the tower that dealt it.</summary>
-        void Hit(Enemy e, float damage, AttackKind kind, Tower source, bool explosion = false)
+        /// <summary>One hit, after armor and synergies; credits the tower that dealt it. quiet: no hit flash (damage over time).</summary>
+        void Hit(Enemy e, float damage, AttackKind kind, Tower source, bool explosion = false, bool quiet = false)
         {
             if (!e.Alive) return;
             damage *= e.Resist(kind);
@@ -504,7 +504,7 @@ namespace DungeonConveyor
             DamageDealt += dealt;
             if (source != null) source.DamageDealt += dealt;
             if (e.IsBoss && explosion) CameraController.Shake(0.12f);
-            if (e.TakeDamage(damage) && (kind == AttackKind.Missile || kind == AttackKind.Mortar)) e.KilledByExplosion = true;
+            if (e.TakeDamage(damage, !quiet) && (kind == AttackKind.Missile || kind == AttackKind.Mortar)) e.KilledByExplosion = true;
         }
 
         /// <summary>Removes dead enemies and pays their bounty; then sets off any death explosions (synergies).</summary>
