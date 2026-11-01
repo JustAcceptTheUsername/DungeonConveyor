@@ -654,7 +654,7 @@ namespace DungeonConveyor
         }
 
         /// <summary>Binary min-heap of cells by cost, for Dijkstra.</summary>
-        class MinHeap
+        public class MinHeap
         {
             readonly List<(Vector2Int cell, int cost)> items = new List<(Vector2Int, int)>();
             public int Count => items.Count;

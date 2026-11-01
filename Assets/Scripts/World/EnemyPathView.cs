@@ -12,9 +12,11 @@ namespace DungeonConveyor
     public class EnemyPathView : MonoBehaviour
     {
         public bool Show = true;
-        public Color Color = new Color(1f, 0.35f, 0.25f, 1f);
-        [Range(0f, 1f)] public float MinAlpha = 0.25f;
-        [Range(0f, 1f)] public float MaxAlpha = 0.75f;
+        public Color Color = new Color(1f, 0.42f, 0.22f, 1f);
+        [Range(0f, 1f)] public float MinAlpha = 0.6f;
+        [Range(0f, 1f)] public float MaxAlpha = 1f;
+        [Tooltip("Dark trail laid under the arrows so the path stands out from the ground.")]
+        public Color TrailColor = new Color(0.22f, 0.02f, 0.02f, 0.7f);
         [Tooltip("Cells per second the pulse travels toward the Core.")]
         public float PulseSpeed = 6f;
         [Tooltip("Cells between pulses.")]
@@ -26,6 +28,7 @@ namespace DungeonConveyor
         Material material;
         Transform root;
         readonly List<(SpriteRenderer sr, int steps)> arrows = new List<(SpriteRenderer, int)>();
+        readonly List<SpriteRenderer> trails = new List<SpriteRenderer>();
         readonly HashSet<Vector2Int> onPath = new HashSet<Vector2Int>();
         bool dirty = true;
 
@@ -81,6 +84,8 @@ namespace DungeonConveyor
                     int dir = more ? map.DirTo(c, next) : IntoCore(c); // the last cell points into the Core
                     if (dir >= 0)
                     {
+                        var trail = Trail(used);
+                        PlanetArt.LayFlat(trail.transform, map, c, map.Heights[c.x, c.y], 0.02f);
                         var sr = Arrow(used++, flow.Distance(c));
                         sr.sprite = BlockArt.PathArrow(dir);
                         PlanetArt.LayFlat(sr.transform, map, c, map.Heights[c.x, c.y], 0.03f);
@@ -90,6 +95,23 @@ namespace DungeonConveyor
                 }
             }
             for (int i = used; i < arrows.Count; i++) arrows[i].sr.enabled = false;
+            for (int i = used; i < trails.Count; i++) trails[i].enabled = false;
+        }
+
+        SpriteRenderer Trail(int i)
+        {
+            while (trails.Count <= i)
+            {
+                var sr = new GameObject("PathTrail").AddComponent<SpriteRenderer>();
+                sr.transform.SetParent(root, false);
+                if (material != null) sr.sharedMaterial = material;
+                sr.sprite = BlockArt.HexFill;
+                sr.sortingOrder = -1; // under the arrows (and belts)
+                trails.Add(sr);
+            }
+            trails[i].enabled = true;
+            trails[i].color = TrailColor;
+            return trails[i];
         }
 
         int IntoCore(Vector2Int c)

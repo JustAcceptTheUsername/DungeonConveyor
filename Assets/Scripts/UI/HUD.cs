@@ -102,8 +102,41 @@ namespace DungeonConveyor
         Rect tipAnchor;
         bool tipRight;
 
+        // The latest refused action, shown at the cursor (see Fail).
+        static string failText;
+        static float failT0 = -10f;
+        static Vector2 failAt;
+        static readonly Dictionary<string, Rect> anchors = new Dictionary<string, Rect>();
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() => blockers.Clear();
+        static void ResetStatics()
+        {
+            blockers.Clear();
+            anchors.Clear();
+            failText = null;
+        }
+
+        /// <summary>Immediate feedback for something the player tried that isn't allowed: a red message pops up at the cursor.</summary>
+        public static void Fail(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return;
+            failText = message;
+            failT0 = Time.unscaledTime;
+            var m = Mouse.current;
+            var p = m != null ? m.position.ReadValue() : new Vector2(UnityEngine.Screen.width * 0.5f, UnityEngine.Screen.height * 0.5f);
+            failAt = new Vector2(p.x, UnityEngine.Screen.height - p.y);
+        }
+
+        /// <summary>
+        /// Screen rect (GUI pixels) of a HUD element last frame, for the tutorial's pointer: "tab:Mining", "slot:&lt;entry id&gt;",
+        /// "send" (the send-wave button).
+        /// </summary>
+        public static bool Anchor(string key, out Rect px) => anchors.TryGetValue(key, out px);
+
+        static void SetAnchor(string key, Rect px)
+        {
+            if (Event.current.type == EventType.Repaint) anchors[key] = px;
+        }
 
         /// <summary>Lets other windows (the tutorial checklist) keep clicks from reaching the world.</summary>
         public static void AddBlocker(Rect px)
@@ -417,7 +450,7 @@ namespace DungeonConveyor
             vh = 1080f;
             UIStyle.EnsureStyles(s);
             if (!Mathf.Approximately(s, lastScale)) { styles.Clear(); lastScale = s; }
-            if (Event.current.type == EventType.Repaint) blockers.Clear();
+            if (Event.current.type == EventType.Repaint) { blockers.Clear(); anchors.Clear(); }
             tipTitle = null;
 
             DrawTopBar();
@@ -433,6 +466,7 @@ namespace DungeonConveyor
             else if (Cleared) DrawStageCleared();
             if (PickAnimating) DrawPickAnim();
             DrawFlies();
+            DrawFail();
             DrawTip();
         }
 
@@ -671,7 +705,7 @@ namespace DungeonConveyor
 
         void DrawWavePanel()
         {
-            const float x = 12, y = 12, w = 280, h = 312;
+            const float x = 12, y = 12, w = 280, h = 352;
             Frame(x, y, w, h, ArcaneSkin.HeaderPanel);
             if (WarningPulse && Skin && Event.current.type == EventType.Repaint)
             {
@@ -705,17 +739,19 @@ namespace DungeonConveyor
             string next = waves.AllWavesSent ? "Final wave: clear the map"
                 : $"{(waves.BossNext ? "BOSS" : eliteNext ? "ELITE" : "Next wave")} in {Mathf.CeilToInt(Mathf.Max(0f, waves.NextWaveIn))}s";
             var nextColor = waves.BossNext ? UIStyle.Danger : eliteNext ? new Color(0.85f, 0.5f, 1f) : UIStyle.Parchment;
-            TxtC(cx, y + 160, cw, 26, next, 20, nextColor, false, true);
-            var nr = R(cx, y + 160, cw, 26);
+            DrawWaveTrack(cx, y + 160, cw);
+            TxtC(cx, y + 200, cw, 26, next, 20, nextColor, false, true);
+            var nr = R(cx, y + 200, cw, 26);
             if (eliteNext && !waves.AllWavesSent && nr.Contains(Event.current.mousePosition))
-                SetTip("Elite wave: " + EliteName(waves.NextElite), "NEXT WAVE", EliteTexts[(int)waves.NextElite], new Rect(cx, y + 160, cw, 26), true);
+                SetTip("Elite wave: " + EliteName(waves.NextElite), "NEXT WAVE", EliteTexts[(int)waves.NextElite], new Rect(cx, y + 200, cw, 26), true);
 
-            if (GemButton(x + 22, y + 192, w - 44, 50, $"SEND NOW  +{waves.EarlyBonus}", 20, !waves.AllWavesSent)) waves.CallEarly();
+            SetAnchor("send", R(x + 22, y + 232, w - 44, 50));
+            if (GemButton(x + 22, y + 232, w - 44, 50, $"SEND NOW  +{waves.EarlyBonus}", 20, !waves.AllWavesSent)) waves.CallEarly();
 
             // Game speed gems, then the reduced-motion toggle at the row's end.
             const float sb = 40, gap = 6;
             float rowW = (GameSpeed.Choices.Length + 1) * sb + GameSpeed.Choices.Length * gap;
-            float sx = x + (w - rowW) * 0.5f, sy = y + 254;
+            float sx = x + (w - rowW) * 0.5f, sy = y + 294;
             for (int i = 0; i < GameSpeed.Choices.Length; i++)
             {
                 float v = GameSpeed.Choices[i];
@@ -728,6 +764,72 @@ namespace DungeonConveyor
             if (SquareButton(rx, sy, sb, false, "FX", reduced)) HudFx.ReducedMotion = !reduced;
             if (rr.Contains(Event.current.mousePosition))
                 SetTip("Reduced motion", reduced ? "ON" : "OFF", reduced ? "Screen shake and fly-ins are off. Click to turn them back on." : "Click to turn off screen shake and fly-ins.", new Rect(rx, sy, sb, sb), true);
+        }
+
+        /// <summary>
+        /// The map's waves as a row of pips: cleared ones filled, the one on the field pulsing, the rest dim; boss waves
+        /// red and taller, card waves marked with a gold dot. Underneath, how many waves are left. Hover for details.
+        /// </summary>
+        void DrawWaveTrack(float x, float y, float w)
+        {
+            int total = Mathf.Max(1, Run.Current.Waves), first = waves.FirstWave;
+            int every = Mathf.Max(1, RunSettings.Instance.WavesPerCard);
+            const float gap = 2f, pipH = 12f;
+            float pw = (w - gap * (total - 1)) / total;
+            int cleared = 0;
+            if (Event.current.type == EventType.Repaint)
+            {
+                for (int i = 0; i < total; i++)
+                {
+                    int wave = first + i;
+                    bool done = wave < waves.Wave || wave == waves.Wave && waves.Alive == 0;
+                    bool live = wave == waves.Wave && waves.Alive > 0;
+                    bool bossWave = Run.IsBossWave(wave);
+                    if (done) cleared++;
+                    float px = x + i * (pw + gap), extra = bossWave ? 4f : 0f;
+                    var col = bossWave ? UIStyle.Danger : UIStyle.Accent;
+                    float a = done ? 1f : live ? 0.55f + 0.45f * Mathf.Sin(Time.unscaledTime * 7f) : 0.22f;
+                    GUI.color = new Color(col.r, col.g, col.b, a);
+                    GUI.DrawTexture(R(px, y + 6 - extra, pw, pipH + 2 * extra), UIStyle.White);
+                    if (wave % every == 0 && !bossWave)
+                    {
+                        GUI.color = new Color(UIStyle.GoldColor.r, UIStyle.GoldColor.g, UIStyle.GoldColor.b, done ? 0.5f : 1f);
+                        float d = Mathf.Min(6f, pw);
+                        GUI.DrawTexture(R(px + (pw - d) * 0.5f, y - 2, d, d), UIStyle.White);
+                    }
+                }
+                Untint();
+            }
+            else
+                for (int i = 0; i < total; i++)
+                    if (first + i < waves.Wave || first + i == waves.Wave && waves.Alive == 0) cleared++;
+            int left = total - cleared;
+            TxtC(x, y + 20, w, 18, left == 0 ? "All waves cleared" : left == 1 ? "1 wave left" : $"{left} waves left", 14, UIStyle.Muted, false, true);
+            if (R(x, y - 4, w, 42).Contains(Event.current.mousePosition))
+                SetTip("Wave progress", $"{cleared} / {total}",
+                    "Filled = cleared, pulsing = on the field. Red pips are boss waves; a gold dot marks a wave that earns an upgrade card.",
+                    new Rect(x, y - 4, w, 42), true);
+        }
+
+        /// <summary>The latest refused action: a red message rising from where the cursor was, fading out.</summary>
+        void DrawFail()
+        {
+            if (failText == null) return;
+            float age = Time.unscaledTime - failT0;
+            if (age > 1.6f) { failText = null; return; }
+            float a = 1f - Mathf.Clamp01((age - 1.1f) / 0.5f);
+            float shake = age < 0.25f && !HudFx.ReducedMotion ? Mathf.Sin(age * 90f) * 6f * (1f - age / 0.25f) : 0f;
+            float rise = HudFx.OutCubic(Mathf.Clamp01(age / 0.4f)) * 18f;
+            const float w = 560, h = 34;
+            float x = Mathf.Clamp(failAt.x / s - w * 0.5f, 8, vw - w - 8) + shake, y = Mathf.Clamp(failAt.y / s - 62 - rise, 8, vh - h - 8);
+            if (Event.current.type == EventType.Repaint)
+            {
+                float tw = Mathf.Min(w, St(19, false, true, false, TextAnchor.MiddleCenter).CalcSize(new GUIContent(failText)).x / s + 36);
+                GUI.color = new Color(0.12f, 0.02f, 0.02f, 0.78f * a);
+                GUI.DrawTexture(R(x + (w - tw) * 0.5f, y, tw, h), UIStyle.White);
+                Untint();
+            }
+            TxtC(x, y, w, h, failText, 19, new Color(UIStyle.Danger.r, UIStyle.Danger.g, UIStyle.Danger.b, a), false, true);
         }
 
         bool SquareButton(float x, float y, float size, bool active, string label, bool struck = false)
@@ -760,7 +862,7 @@ namespace DungeonConveyor
 
         // ---------------------------------------------------------------- upgrade row
 
-        const float UpX = 16, UpY = 334, UpCell = 50, UpStride = 56;
+        const float UpX = 16, UpY = 374, UpCell = 50, UpStride = 56;
         const int UpCols = 5, UpRows = 3;
 
         Rect UpgradeRect(int i) => new Rect(UpX + (i % UpCols) * UpStride, UpY + (i / UpCols) * UpStride, UpCell, UpCell);
@@ -1135,7 +1237,7 @@ namespace DungeonConveyor
             string hint = build.BlockedReason != null ? build.BlockedReason
                 : !build.CapturesLeftDrag ? "Left-click to build  ·  Right-click or Esc to cancel"
                 : e.Id == BuildingCatalog.WallId ? "Drag to build a wall line  ·  Hold right-click to clear  ·  Esc to cancel"
-                : "Drag to lay a belt (end on a belt to join it)  ·  Hold right-click to clear  ·  Esc to cancel";
+                : "Press at the start, release at the end: the belt routes itself (end on a belt to join it)  ·  Esc to cancel";
             TxtC(x + 80, y + 38, w - 160, 26, hint, 16, build.BlockedReason != null ? UIStyle.Danger : UIStyle.Parchment, false, true);
         }
 
@@ -1213,6 +1315,7 @@ namespace DungeonConveyor
                 float tx = x + 18 + i * (tabW + 2), ty = y - tabH + 6;
                 var rect = R(tx, ty, tabW, tabH);
                 Block(rect);
+                SetAnchor("tab:" + Tabs[i].tab, rect);
                 bool over = rect.Contains(Event.current.mousePosition);
                 if (GUI.Button(rect, GUIContent.none, None)) tab = Tabs[i].tab;
                 if (Skin)
@@ -1234,7 +1337,12 @@ namespace DungeonConveyor
                 bool active = build.Placing == e;
                 bool afford = build.CanAfford(e);
                 bool over = rect.Contains(Event.current.mousePosition);
-                if (GUI.Button(rect, GUIContent.none, None)) build.Select(e);
+                SetAnchor("slot:" + e.Id, R(sx, sy, slot, slot));
+                if (GUI.Button(rect, GUIContent.none, None))
+                {
+                    if (!afford && build.Placing != e) Fail($"Not enough gold: {e.Name} costs {e.Cost:N0}");
+                    build.Select(e);
+                }
                 if (over) hovered = e;
 
                 if (Event.current.type == EventType.Repaint)

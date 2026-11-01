@@ -11,17 +11,20 @@ namespace DungeonConveyor
     {
         const int W = 64;
 
-        static Sprite highlight;
+        static Sprite highlight, hexFill;
         static Sprite[] arrows;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
-            highlight = null;
+            highlight = hexFill = null;
             arrows = null;
         }
 
         public static Sprite Highlight => highlight != null ? highlight : highlight = MakeHighlight();
+
+        /// <summary>A solid hexagon a little smaller than a cell, with soft edges (the enemy path's trail).</summary>
+        public static Sprite HexFill => hexFill != null ? hexFill : hexFill = MakeHexFill();
 
         /// <summary>A chevron lying flat on a cell, pointing toward side dir (see Dir).</summary>
         public static Sprite PathArrow(int dir)
@@ -48,6 +51,22 @@ namespace DungeonConveyor
                     px[y * W + x] = edge > 0.5f ? Color.clear : edge > 0.5f - 3f * pixel ? Color.white : new Color(1f, 1f, 1f, 0.14f);
                 }
             return MakeSprite(px, "Highlight");
+        }
+
+        static Sprite MakeHexFill()
+        {
+            var px = new Color[W * W];
+            float pixel = Dir.SpriteSpan / W;
+            for (int y = 0; y < W; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    var p = At(x, y);
+                    float edge = 0f;
+                    for (int d = 0; d < 3; d++) edge = Mathf.Max(edge, Mathf.Abs(Vector2.Dot(p, Dir.Normal(d))));
+                    float a = Mathf.Clamp01((0.47f - edge) / (3f * pixel));
+                    px[y * W + x] = new Color(1f, 1f, 1f, a);
+                }
+            return MakeSprite(px, "HexFill");
         }
 
         static Sprite MakeArrow(int dir)

@@ -21,9 +21,11 @@ namespace DungeonConveyor
         [Tooltip("Strength and frequency of the large, soft colour patches across the ground.")]
         public float PatchStrength = 0.22f, PatchScale = 0.12f;
         [Tooltip("Width of the darker rim around each tile (the grid lines), in cells.")]
-        [Range(0f, 0.2f)] public float Bevel = 0.06f;
+        [Range(0f, 0.2f)] public float Bevel = 0.025f;
         [Tooltip("Colour of the 12 pentagon rock spires.")]
         public Color SpireColor = new Color(0.32f, 0.27f, 0.38f);
+        [Tooltip("Overall brightness of plain ground (lower = darker, so buildings, ore and the enemy path stand out).")]
+        [Range(0.2f, 1.5f)] public float GroundBrightness = 0.68f;
         [Tooltip("Brightness of the grid lines relative to the tile (lower = darker, more visible lines).")]
         [Range(0f, 1f)] public float BevelShade = 0.5f;
         public int StarCount = 900;
@@ -34,6 +36,8 @@ namespace DungeonConveyor
         public float AtmospherePower = 2f;
         [Tooltip("Brightness of the glow (it is additive, so this acts as its opacity).")]
         public float AtmosphereStrength = 1.1f;
+        [Tooltip("Zoomed in, the shell's height above the highest ground as a share of the camera's (keeps it below the camera).")]
+        [Range(0.1f, 0.9f)] public float AtmosphereCameraShare = 0.45f;
 
         const float WallShade = 0.62f;
 
@@ -216,7 +220,7 @@ namespace DungeonConveyor
         Color CellColor(Vector2Int c)
         {
             int level = map.Heights[c.x, c.y];
-            var ground = Color.Lerp(palette.Low, palette.High, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(IsoGrid.MinLevel, IsoGrid.MaxLevel, level)));
+            var ground = Color.Lerp(palette.Low, palette.High, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(IsoGrid.MinLevel, IsoGrid.MaxLevel, level))) * GroundBrightness;
             Color tint;
             if (map.IsPentagon(c)) return SpireColor;
             if (map.IsBase(c)) tint = BaseColor;
@@ -263,14 +267,18 @@ namespace DungeonConveyor
 
         // ---------------------------------------------------------------- sky
 
+        Transform atmosphere;
+        Material atmosphereMaterial;
+
         void BuildAtmosphere()
         {
             var shell = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             Destroy(shell.GetComponent<Collider>());
             shell.name = "Atmosphere";
             shell.transform.SetParent(transform, false);
-            shell.transform.localScale = Vector3.one * (map.RadiusAt(IsoGrid.MaxLevel) * AtmosphereScale) * 2f;
-            var material = PlanetArt.NewMaterial("Atmosphere");
+            atmosphere = shell.transform;
+            atmosphere.localScale = Vector3.one * (map.RadiusAt(IsoGrid.MaxLevel) * AtmosphereScale) * 2f;
+            var material = atmosphereMaterial = PlanetArt.NewMaterial("Atmosphere");
             material.SetColor("_Color", palette.Atmosphere);
             material.SetFloat("_Power", AtmospherePower);
             material.SetFloat("_Strength", AtmosphereStrength);
@@ -278,6 +286,22 @@ namespace DungeonConveyor
 
             var cam = Camera.main;
             if (cam != null) cam.backgroundColor = palette.Space;
+        }
+
+        /// <summary>
+        /// The glow shell shrinks toward the ground as the camera zooms in, so it always stays well below the camera:
+        /// the camera never enters it or has its near plane cut a hole into it. Close in, the glow also softens.
+        /// </summary>
+        void LateUpdate()
+        {
+            var cam = Camera.main;
+            if (atmosphere == null || cam == null) return;
+            float top = map.RadiusAt(IsoGrid.MaxLevel), full = top * AtmosphereScale;
+            float camDist = cam.transform.position.magnitude;
+            float r = Mathf.Clamp(top + (camDist - top) * AtmosphereCameraShare, top + 0.5f, full);
+            atmosphere.localScale = Vector3.one * r * 2f;
+            float zoomedOut = Mathf.InverseLerp(top, full * 1.5f, camDist);
+            atmosphereMaterial.SetFloat("_Strength", AtmosphereStrength * Mathf.Lerp(0.45f, 1f, zoomedOut));
         }
 
         /// <summary>Small quads scattered on a huge sphere around everything, facing the centre.</summary>

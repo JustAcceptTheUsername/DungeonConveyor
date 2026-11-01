@@ -111,6 +111,15 @@ namespace DungeonConveyor
             Apply();
         }
 
+        /// <summary>Space / F: snap the view straight over the Core, keeping the zoom and which way is up on screen.</summary>
+        public void FocusCore()
+        {
+            var up = Map.BaseUp(0);
+            orbit = Quaternion.FromToRotation(orbit * Vector3.back, up) * orbit;
+            dragging = grabbing = false;
+            Apply();
+        }
+
         /// <summary>Close in, the camera swings back over the ground and looks across it.</summary>
         float Tilt => CloseTilt * (1f - Mathf.InverseLerp(MinDist, Mathf.Lerp(MinDist, MaxDist, 0.6f), distance));
 
@@ -172,6 +181,8 @@ namespace DungeonConveyor
         {
             var k = Keyboard.current;
             if (k == null) return;
+            if ((k.spaceKey.wasPressedThisFrame || k.fKey.wasPressedThisFrame) && !Tutorial.PagesOpen && !SettingsMenu.IsOpen)
+                FocusCore();
             float x = (k.dKey.isPressed || k.rightArrowKey.isPressed ? 1f : 0f) - (k.aKey.isPressed || k.leftArrowKey.isPressed ? 1f : 0f);
             float y = (k.wKey.isPressed || k.upArrowKey.isPressed ? 1f : 0f) - (k.sKey.isPressed || k.downArrowKey.isPressed ? 1f : 0f);
             if (x == 0f && y == 0f) return;

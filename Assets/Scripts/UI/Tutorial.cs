@@ -46,13 +46,13 @@ namespace DungeonConveyor
                 Body = "Your <b>Core</b> stands on the <color=#FFD040>gold hexes</color>. Every wave, meteors carry monsters down onto the " +
                        "<color=#FF5040>red landing sites</color>, and they march to your Core. If its health runs out, the run is over.\n\n" +
                        "Survive every wave of the map to move on to the next, bigger planet. Your gold, upgrades and unlocks come with you.\n\n" +
-                       "<b>Drag</b> to turn the planet, <b>scroll</b> to zoom, <b>WASD</b> or the arrow keys also turn it.",
+                       "<b>Drag</b> to turn the planet, <b>scroll</b> to zoom, <b>WASD</b> or the arrow keys also turn it. <b>Space</b> or <b>F</b> snaps back to your Core.",
             },
             new Page
             {
                 Title = "MINE AND HAUL",
                 Body = "Gold comes from crystals. Put a <b>Miner</b> on an ore patch (the coloured hexes), then pick the <b>Conveyor</b>, " +
-                       "press on a hex next to the miner and <b>drag</b> a belt to the Core. Every crystal sold at the Core pays gold and banks " +
+                       "press on a hex next to the miner, <b>drag</b> to the Core and let go: the belt finds its own way there. Every crystal sold at the Core pays gold and banks " +
                        "crystals for the shop between maps.\n\n" +
                        "Rarer ores lie further out and are worth more. A <b>Refiner</b> on the belt makes crystals worth 2.5x, and if two " +
                        "<b>different</b> ores reach a Refiner it fuses them into an <b>alloy</b> worth far more.\n\n" +
@@ -187,7 +187,242 @@ namespace DungeonConveyor
             GUI.depth = -50; // above the HUD, below the settings window
             MenuGui.Begin();
             if (page >= 0) DrawPage();
-            else if (!SettingsMenu.IsOpen) DrawChecklist();
+            else if (!SettingsMenu.IsOpen)
+            {
+                DrawChecklist();
+                DrawGuide();
+            }
+        }
+
+        // ---------------------------------------------------------------- guide pointer
+
+        IsoGrid map;
+        Camera cam;
+        FlowField guidePath;
+        float guideRefresh;
+        Vector2Int? guideCell;
+        int guideStep = -1;
+        static Texture2D pointer;
+
+        /// <summary>
+        /// Points at what to do next for the first unticked step: the build tab, then the building's slot, then the
+        /// spot on the planet to put it, with a short instruction beside the arrow.
+        /// </summary>
+        void DrawGuide()
+        {
+            if (Time.timeScale == 0f) return; // a card pick or end screen is up
+            int step = System.Array.IndexOf(done, false);
+            if (step < 0) return;
+            if (map == null) map = GetComponent<IsoGrid>();
+            if (cam == null) cam = Camera.main;
+            if (map == null || cam == null || build.Catalog == null) return;
+
+            var placing = build.Placing;
+            BuildingCatalog.Entry want = null;
+            string pick = null, place = null;
+            bool world = false;
+            switch (step)
+            {
+                case 0:
+                    want = FirstEntry(e => e.NeedsOre);
+                    pick = "Pick the Miner";
+                    place = "Put the Miner on ore (the coloured hexes)";
+                    break;
+                case 1:
+                case 4:
+                    want = build.Catalog.Find(BuildingCatalog.ConveyorId);
+                    pick = "Pick the Conveyor";
+                    place = step == 1 ? "Press next to the Miner, drag to the Core and let go" : "Drag a belt from a Miner into a tower";
+                    break;
+                case 2:
+                    want = FirstEntry(e => e.Attack != AttackKind.None && e.Category == BuildCategory.Defense);
+                    pick = "Pick a tower";
+                    place = "Build it beside the red arrows";
+                    break;
+                case 3:
+                    if (waves == null || waves.Wave >= waves.FirstWave) return;
+                    if (HUD.Anchor("send", out var send)) DrawPointer(send, "Ready? Send the first wave (or wait for it)");
+                    return;
+                case 5:
+                    world = true;
+                    place = "Build anything next to a rock spire to claim its relic";
+                    break;
+            }
+            if (want != null && placing != want)
+            {
+                if (HUD.Anchor("slot:" + want.Id, out var slot)) DrawPointer(slot, pick);
+                else if (HUD.Anchor("tab:" + want.Category, out var tab)) DrawPointer(tab, $"Open {want.Category.ToString().ToUpper()}");
+                return;
+            }
+            if (want != null) world = true;
+            if (!world) return;
+
+            if (guideStep != step || Time.unscaledTime > guideRefresh)
+            {
+                guideStep = step;
+                guideRefresh = Time.unscaledTime + 1f;
+                guideCell = GuideCell(step);
+            }
+            if (!guideCell.HasValue) return;
+            var p = map.SurfaceCenter(guideCell.Value);
+            var sp = cam.WorldToScreenPoint(p);
+            bool facing = Vector3.Dot(map.Up(guideCell.Value), cam.transform.position - p) > 0f;
+            if (sp.z <= 0f || !facing)
+            {
+                DrawPointer(new Rect(Screen.width * 0.5f - 1f, Screen.height * 0.3f, 2f, 2f), place + "  ·  press F to face your Core", false);
+                return;
+            }
+            float r = 26f * MenuGui.S;
+            var gp = new Vector2(Mathf.Clamp(sp.x, r, Screen.width - r), Mathf.Clamp(Screen.height - sp.y, r, Screen.height - r));
+            DrawPointer(new Rect(gp.x - r, gp.y - r, 2f * r, 2f * r), place);
+        }
+
+        BuildingCatalog.Entry FirstEntry(System.Predicate<BuildingCatalog.Entry> match)
+        {
+            foreach (var e in build.Catalog.Entries)
+                if (e.Purchasable && Run.IsUnlocked(e.Id) && match(e)) return e;
+            return null;
+        }
+
+        /// <summary>Where on the planet the current step wants the player to build.</summary>
+        Vector2Int? GuideCell(int step)
+        {
+            var core = map.BaseOrigin;
+            switch (step)
+            {
+                case 0:
+                    return Nearest(core, c => map.IsOre(c) && map.BuildingAt(c) == null);
+                case 1:
+                case 4:
+                {
+                    // A free hex beside the nearest miner.
+                    Miner best = null;
+                    foreach (var m in build.Miners)
+                        if (best == null || Arc(m.Origin, core) < Arc(best.Origin, core)) best = m;
+                    if (best == null) return null;
+                    foreach (var c in best.Cells)
+                        for (int d = 0; d < map.Sides(c); d++)
+                        {
+                            var n = map.Neighbour(c, d);
+                            if (map.BuildingAt(n) == null && !map.IsOre(n) && !map.IsPentagon(n) && !map.IsBase(n)) return n;
+                        }
+                    return best.Origin;
+                }
+                case 2:
+                {
+                    // A few steps out from the Core along the enemies' path.
+                    if (guidePath == null) guidePath = new FlowField(map);
+                    guidePath.Rebuild();
+                    if (map.Spawns.Count == 0) return null;
+                    var c = map.Spawns[0].Landing;
+                    int start = guidePath.Distance(c);
+                    if (start == FlowField.Unreachable) return null;
+                    while (guidePath.Distance(c) > Mathf.Min(6, start / 2) && guidePath.Next(c, out var next)) c = next;
+                    for (int d = 0; d < map.Sides(c); d++)
+                    {
+                        var n = map.Neighbour(c, d);
+                        if (map.BuildingAt(n) == null && !map.IsOre(n) && !map.IsPentagon(n) && !map.IsBase(n) && !map.IsSpawn(n)) return n;
+                    }
+                    return c;
+                }
+                case 5:
+                {
+                    var spires = GetComponent<SpireRelics>();
+                    if (spires == null) return null;
+                    Vector2Int? best = null;
+                    foreach (var c in spires.UnclaimedCells)
+                        if (best == null || Arc(c, core) < Arc(best.Value, core)) best = c;
+                    return best;
+                }
+            }
+            return null;
+        }
+
+        float Arc(Vector2Int a, Vector2Int b) => Vector3.Angle(map.Up(a), map.Up(b));
+
+        Vector2Int? Nearest(Vector2Int from, System.Predicate<Vector2Int> match)
+        {
+            Vector2Int? best = null;
+            float bestArc = float.MaxValue;
+            for (int i = 0; i < map.CellCount; i++)
+            {
+                var c = new Vector2Int(i, 0);
+                if (!match(c)) continue;
+                float a = Arc(c, from);
+                if (a < bestArc) { bestArc = a; best = c; }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// A pulsing ring around the target (GUI pixels) and a bobbing arrow pointing at it from a note with the
+        /// instruction, placed toward the screen centre. Doesn't block clicks.
+        /// </summary>
+        void DrawPointer(Rect target, string text, bool arrow = true)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            float s = MenuGui.S, t = Time.unscaledTime;
+            float pulse = 0.5f + 0.5f * Mathf.Sin(t * 5f);
+            if (arrow)
+            {
+                GUI.color = new Color(UIStyle.Accent.r, UIStyle.Accent.g, UIStyle.Accent.b, 0.45f + 0.5f * pulse);
+                UIStyle.GlowRing(target, s, 10f + 6f * pulse);
+            }
+
+            var center = new Vector2(Screen.width, Screen.height) * 0.5f;
+            var dir = target.center - center;
+            dir = dir.sqrMagnitude < 1f ? Vector2.down : dir.normalized;
+            float reach = (Mathf.Max(target.width, target.height) * 0.5f + 30f * s);
+            float bob = (HudFx.ReducedMotion ? 0f : Mathf.Sin(t * 6f) * 8f) * s;
+            var tip = target.center - dir * (reach + bob);
+            float aw = 46f * s;
+            var tail = tip - dir * aw;
+
+            // The note: centred beyond the arrow's tail, kept on screen.
+            var style = MenuGui.Label;
+            var content = new GUIContent(text);
+            float w = Mathf.Min(style.CalcSize(content).x + 40f * s, 620f * s), h = 52f * s;
+            var note = new Rect(tail.x - w * 0.5f - dir.x * w * 0.5f, tail.y - h * 0.5f - dir.y * (h * 0.5f + 6f * s), w, h);
+            note.x = Mathf.Clamp(note.x, 8f * s, Screen.width - w - 8f * s);
+            note.y = Mathf.Clamp(note.y, 8f * s, Screen.height - h - 8f * s);
+            GUI.color = new Color(0.06f, 0.04f, 0.03f, 0.88f);
+            GUI.DrawTexture(note, UIStyle.White);
+            GUI.color = new Color(UIStyle.Accent.r, UIStyle.Accent.g, UIStyle.Accent.b, 0.9f);
+            GUI.DrawTexture(new Rect(note.x, note.yMax - 3f * s, note.width, 3f * s), UIStyle.White);
+            GUI.color = Color.white;
+            MenuGui.Text(new Rect(note.x + 20f * s, note.y, note.width - 40f * s, note.height), text, style, UIStyle.Parchment);
+
+            if (!arrow) return;
+            if (pointer == null) pointer = MakePointer();
+            var save = GUI.matrix;
+            float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f; // the texture points down (+y on screen)
+            GUIUtility.RotateAroundPivot(angle, tip);
+            GUI.color = UIStyle.Accent;
+            GUI.DrawTexture(new Rect(tip.x - aw * 0.5f, tip.y - aw, aw, aw), pointer);
+            GUI.matrix = save;
+            GUI.color = Color.white;
+        }
+
+        /// <summary>A white arrow pointing down (its tip at the bottom centre), with a dark outline.</summary>
+        static Texture2D MakePointer()
+        {
+            const int n = 64;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color[n * n];
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    // Texture rows run bottom-up; GUI draws row n-1 at the top, so the tip (row 0) is at the bottom.
+                    float u = (x + 0.5f) / n - 0.5f, v = (y + 0.5f) / n;
+                    float head = v < 0.55f ? Mathf.Abs(u) - v * 0.85f : float.MaxValue;     // triangle, widest at v = 0.55
+                    float shaft = v >= 0.5f ? Mathf.Abs(u) - 0.13f : float.MaxValue;        // stem above it
+                    float d = Mathf.Min(head, shaft);
+                    if (v > 0.97f) d = Mathf.Max(d, 0.01f);
+                    px[y * n + x] = d < -0.04f ? Color.white : d < 0f ? new Color(0.1f, 0.06f, 0.02f, 1f) : Color.clear;
+                }
+            tex.SetPixels(px);
+            tex.Apply(false, true);
+            return tex;
         }
 
         void DrawPage()

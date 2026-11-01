@@ -18,6 +18,12 @@ namespace DungeonConveyor
         /// <summary>Spires still holding their relic.</summary>
         public int Unclaimed => spires.Count;
 
+        /// <summary>Cells of the spires whose relic is still waiting.</summary>
+        public IEnumerable<Vector2Int> UnclaimedCells
+        {
+            get { foreach (var (c, _) in spires) yield return c; }
+        }
+
         IsoGrid map;
         BuildController build;
         readonly List<(Vector2Int cell, SpriteRenderer beacon)> spires = new List<(Vector2Int, SpriteRenderer)>();

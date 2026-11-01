@@ -175,7 +175,7 @@ namespace DungeonConveyor
         // ---------------------------------------------------------------- removing
 
         bool erasing, erasedAny;
-        Vector2Int? lastEraseCell;
+        Vector2Int? lastEraseCell, skipCell;
 
         /// <summary>
         /// Right-click removes the building under the cursor (refunded; the Core stays). Holding right-click and
@@ -188,21 +188,28 @@ namespace DungeonConveyor
             {
                 erasing = true;
                 erasedAny = false;
-                lastEraseCell = null;
+                lastEraseCell = skipCell = null;
                 drawingBelt = false;
                 var target = PickBuilding(screen);
                 if (target != null && target.Def.Purchasable && !IsSweepable(target))
                 {
                     RemoveBuilding(target, refund: true);
                     erasedAny = true;
+                    // Don't also sweep a belt the removed building's model stood in front of.
+                    lastEraseCell = map.Pick(cam, screen, out var under) ? under : (Vector2Int?)null;
+                    skipCell = lastEraseCell;
                 }
+                else if (target != null && target.IsCore && Placing == null) Fail("The Core can't be removed");
             }
             if (!erasing) return;
 
             if (mouse.rightButton.isPressed)
             {
-                var target = PickBuilding(screen);
-                Vector2Int? cell = target != null ? target.Origin : map.Pick(cam, screen, out var c) ? c : (Vector2Int?)null;
+                // Sweep by the ground under the cursor: tall models in front (the Core, towers, miners) would
+                // otherwise hide the belts and walls next to them, leaving them impossible to remove.
+                Vector2Int? cell = map.Pick(cam, screen, out var c) ? c : (Vector2Int?)null;
+                if (cell == skipCell) return;
+                skipCell = null;
                 if (cell.HasValue)
                 {
                     // Walk from the last cell so a quick swipe doesn't leave gaps.
@@ -262,7 +269,7 @@ namespace DungeonConveyor
                 Place(Placing, origin, level);
                 Sfx.Play(Sfx.Lib.Place, map.FootprintCenter(origin, Placing.Size, level));
             }
-            else if (!ok && mouse.leftButton.wasReleasedThisFrame) Sfx.Play(Sfx.Lib.CantPlace);
+            else if (!ok && mouse.leftButton.wasReleasedThisFrame && (camController == null || !camController.IsDragging)) Fail(reason);
         }
 
         public bool CanPlace(BuildingCatalog.Entry e, Vector2Int origin, out int level, out string reason)
@@ -373,7 +380,7 @@ namespace DungeonConveyor
                 if (!hit) return;
                 beltPath.Clear();
                 beltPath.Add(cell);
-                if (mouse.leftButton.wasPressedThisFrame) drawingBelt = true;
+                if (mouse.leftButton.wasPressedThisFrame) { drawingBelt = true; routedTo = null; }
                 else
                 {
                     // Hover preview of a single tile.
@@ -382,16 +389,30 @@ namespace DungeonConveyor
                 }
             }
 
-            if (hit) ExtendBelt(cell);
+            if (hit)
+            {
+                if (walls) ExtendBelt(cell);
+                else RouteBelt(cell);
+            }
             int buildable = walls ? PreviewWalls() : PreviewBelt();
 
             if (mouse.leftButton.wasReleasedThisFrame || !mouse.leftButton.isPressed)
             {
                 drawingBelt = false;
+                routedTo = null;
+                string reason = BlockedReason;
                 if (walls) PlaceWalls(buildable); else PlaceBelt(buildable);
                 if (buildable > 0) Sfx.Play(walls ? Sfx.Lib.Place : Sfx.Lib.PlaceBelt, map.SurfaceCenter(beltPath[0]));
-                else Sfx.Play(Sfx.Lib.CantPlace);
+                else Fail(reason ?? "Can't build here");
+                if (buildable > 0 && reason != null) HUD.Fail($"Stopped after {buildable} {(buildable == 1 ? "tile" : "tiles")}: {reason}");
             }
+        }
+
+        /// <summary>A refused action: the error sound plus a message at the cursor.</summary>
+        void Fail(string reason)
+        {
+            Sfx.Play(Sfx.Lib.CantPlace);
+            HUD.Fail(reason);
         }
 
         // ---------------------------------------------------------------- walls
@@ -485,6 +506,72 @@ namespace DungeonConveyor
         }
 
         // ---------------------------------------------------------------- conveyors
+
+        Vector2Int? routedTo;
+        readonly Dictionary<Vector2Int, Vector2Int> routeFrom = new Dictionary<Vector2Int, Vector2Int>();
+        readonly Dictionary<Vector2Int, int> routeCost = new Dictionary<Vector2Int, int>();
+
+        /// <summary>
+        /// The belt runs from where the drag started to the cell under the cursor along the shortest buildable route
+        /// (around buildings, ore, spires and steep steps), so only the end point needs aiming. It may end on a belt or
+        /// building it can feed. With no way through, it falls back to a straight line, shown red where it's blocked.
+        /// </summary>
+        void RouteBelt(Vector2Int target)
+        {
+            if (routedTo == target) return;
+            routedTo = target;
+            var start = beltPath[0];
+            beltPath.Clear();
+            beltPath.Add(start);
+            if (target == start || FindRoute(start, target)) return;
+            ExtendBelt(target);
+        }
+
+        /// <summary>A* over belt-buildable cells; on success beltPath holds the route (start first).</summary>
+        bool FindRoute(Vector2Int start, Vector2Int target)
+        {
+            if (!BeltCellOk(start, out _)) return false;
+            routeFrom.Clear();
+            routeCost.Clear();
+            var open = new IsoGrid.MinHeap();
+            var goal = map.Up(target);
+            int H(Vector2Int c) => Mathf.RoundToInt(Vector3.Angle(map.Up(c), goal) * Mathf.Deg2Rad * map.Radius * 10f);
+            routeCost[start] = 0;
+            open.Push(start, H(start));
+            Vector2Int? reached = null;
+            for (int guard = 0; open.Count > 0 && guard < 8000; guard++)
+            {
+                var c = open.Pop();
+                if (c == target) { reached = c; break; }
+                int g = routeCost[c];
+                for (int d = 0; d < map.Sides(c); d++)
+                {
+                    var n = map.Neighbour(c, d);
+                    if (n == c) continue;
+                    if (Mathf.Abs(HeightAt(n) - HeightAt(c)) > MaxFootprintSlope) continue;
+                    bool ok = BeltCellOk(n, out _) || n == target && AcceptsFrom(map.BuildingAt(n), c);
+                    if (!ok) continue;
+                    int ng = g + 10;
+                    if (routeCost.TryGetValue(n, out int old) && old <= ng) continue;
+                    routeCost[n] = ng;
+                    routeFrom[n] = c;
+                    open.Push(n, ng + H(n));
+                }
+            }
+            if (!reached.HasValue) return false;
+            var path = new List<Vector2Int>();
+            for (var c = reached.Value; c != start; c = routeFrom[c]) path.Add(c);
+            path.Reverse();
+            beltPath.AddRange(path);
+            return true;
+        }
+
+        bool BeltCellOk(Vector2Int c, out string reason)
+        {
+            if (!CellFree(c, out reason)) return false;
+            if (map.IsOre(c)) { reason = "Ore is reserved for mining"; return false; }
+            return true;
+        }
 
         /// <summary>Follow the cursor: walk to it one cell at a time, backtracking if it returns over the belt.</summary>
         void ExtendBelt(Vector2Int target)
