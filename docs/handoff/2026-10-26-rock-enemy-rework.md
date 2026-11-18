@@ -1,8 +1,8 @@
-# Handoff: rock-critter enemy rework (branch `alex/enemy-rework`, 2026-10-26)
+# Dev notes: rock-critter enemy rework (branch `alex/enemy-rework`, 2026-10-26)
 
-Written for Dido and Dido's Claude agent. Read this before touching anything in `Assets/Scripts/Enemies/`,
+Read this before touching anything in `Assets/Scripts/Enemies/`,
 `Combat.cs` (death path), `Fx.cs`, `EnemyCatalogSync.cs` or `Resources/EnemyCatalog.asset`.
-Base: `main` at 99121c0 ("Mazalo"). 10 commits, not pushed yet. Alex will push and open a PR when ready; Dido reviews.
+Base: `main` at 99121c0 ("Mazalo"). 10 commits in the first pass, plus the polish pass in §10.
 
 **Status (Alex, 2026-10-26):** "looked fine for now". This is a first full pass. **Models and animations need more
 polish.** Alex also says **the sound effects are very good** and only need **timing and general polish** against the
