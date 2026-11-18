@@ -1,9 +1,9 @@
-# Handoff: roguelike loop + Arcane HUD (branch `alex/roguelike`, 2026-10-12)
+# Dev notes: roguelike loop + Arcane HUD (branch `alex/roguelike`, 2026-10-12)
 
-Written for Dido and Dido's Claude agent. Read this before touching `Run.cs`, `WaveManager.cs`, `Combat.cs`,
-`Enemy.cs` or anything in `Assets/Scripts/UI/`. Base: `main` at 79f3d72 ("Update SampleScene.unity"), which already
-contains Alex's art-rework commits and Dido's `341b2ca` roguelike skeleton. Dido ran out of credits mid-roguelike,
-so Alex's session took over **on top of Dido's `Run.cs`** (his stages, card idea and boss constant are kept and extended).
+Read this before touching `Run.cs`, `WaveManager.cs`, `Combat.cs`, `Enemy.cs` or anything in `Assets/Scripts/UI/`.
+Base: `main` at 79f3d72 ("Update SampleScene.unity"), which already contains Alex's art-rework commits and
+Dido's `341b2ca` roguelike skeleton. The roguelike work continues on top of Dido's `Run.cs`
+(his stages, card idea and boss constant are kept and extended).
 
 ## 1. Roguelike loop (commit "Roguelike: ...")
 | Feature | Where | Notes |
