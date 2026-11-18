@@ -38,6 +38,7 @@
 
 # Crash reports and build artefacts
 sysinfo.txt
+*.log
 crashlytics-build.properties
 *.apk
 *.aab
