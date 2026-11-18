@@ -2,7 +2,7 @@
 
 A roguelike tower-defense game built in Unity (C#). You defend your Core on a hex-tiled planet by placing miners, conveyor belts and towers while waves of rock creatures attack. Work in progress.
 
-![Gameplay](docs/gameplay.gif)
+![Gameplay](docs/DungeonConveyorCombat.gif)
 
 ## Gameplay
 - Build miners, belts and towers on a rotating hex planet, and keep your Core alive
@@ -11,9 +11,9 @@ A roguelike tower-defense game built in Unity (C#). You defend your Core on a he
 - After each cleared wave, pick 1 of 3 upgrade cards: elemental effects (fire, lightning, frost, poison) or stat boosts
 - Maps get bigger as you clear stages
 
-![Boss fight](docs/boss-fight.gif)
+![Boss fight](docs/DungeonConveyorBoss.gif)
 
-![Upgrade cards](docs/cards.gif)
+![Upgrade cards](docs/DungeonConveyorCards.gif)
 
 ## Technical highlights
 - Wave and boss system with a stage-based roguelike run
